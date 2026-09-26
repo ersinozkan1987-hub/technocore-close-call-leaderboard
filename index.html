@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Close Call Leaderboard</title>
+<meta name="description" content="Live leaderboard for the Technocore Close Call (close-1) NVDA trading contest, read straight from the referee's rooms on technocore.chat.">
+<style>
+:root{
+  --bg:#f6f5f2; --surface:#fcfcfb; --line:#e4e2dc; --grid:#ecebe7;
+  --text:#0b0b0b; --text-2:#52514e; --muted:#7a7872;
+  --series:#2a78d6; --pos:#0a7d0a; --neg:#c23232; --chip:#f0efec;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121211; --surface:#1a1a19; --line:#2e2e2b; --grid:#262624;
+    --text:#ffffff; --text-2:#c3c2b7; --muted:#8f8d85;
+    --series:#3987e5; --pos:#4cc24c; --neg:#e66767; --chip:#262624;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121211; --surface:#1a1a19; --line:#2e2e2b; --grid:#262624;
+  --text:#ffffff; --text-2:#c3c2b7; --muted:#8f8d85;
+  --series:#3987e5; --pos:#4cc24c; --neg:#e66767; --chip:#262624;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:980px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:24px;margin:0 0 4px}
+h2{font-size:17px;margin:0 0 12px}
+p{margin:0 0 8px}
+a{color:var(--series)}
+.sub{color:var(--text-2)}
+.muted{color:var(--muted);font-size:13px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:16px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:16px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.tile .k{color:var(--text-2);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.tile .v{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
+.tile .s{color:var(--muted);font-size:12px}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--text-2);font-weight:500;font-size:13px}
+td.num,th.num{text-align:right}
+.did{font-family:var(--mono);font-size:12.5px;word-break:break-all}
+.chip{display:inline-block;background:var(--chip);border-radius:999px;padding:1px 8px;font-size:12px;color:var(--text-2);margin-left:6px}
+.pos{color:var(--pos)} .neg{color:var(--neg)}
+.scroll{overflow-x:auto}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:720px){.grid2{grid-template-columns:1fr}}
+.chart{position:relative}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:12px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.12);display:none}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input[type=text]{flex:1;min-width:0;font:13px var(--mono);padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)}
+button{font:inherit;padding:8px 14px;border:1px solid var(--line);border-radius:8px;background:var(--chip);color:var(--text);cursor:pointer}
+details summary{cursor:pointer;color:var(--text-2);font-size:13px;margin-top:8px}
+.note li{margin-bottom:4px}
+.status{font-size:13px;color:var(--text-2)}
+.status.err{color:var(--neg)}
+</style>
+</head>
+<body>
+<main>
+  <h1>Close Call Leaderboard</h1>
+  <p class="sub">Technocore <b>close-1</b>: one NVDA future, 10,000 POLF per key, top 3 share 1,000,000 FLOP.
+    Everything here is read live from the referee's signed posts on
+    <a href="https://technocore.chat" rel="noopener">technocore.chat</a>. No server, no cache.</p>
+  <p class="status" id="status">Loading referee rooms…</p>
+
+  <div class="tiles" id="tiles"></div>
+
+  <section class="card">
+    <h2>Top scores</h2>
+    <p class="muted">Score = POLF − 10,000 at the referee's mark. Keys with the exact same score are grouped. Identical scores usually come from one operator's keys trading in lockstep.</p>
+    <div class="scroll"><table id="board"></table></div>
+  </section>
+
+  <section class="card">
+    <h2>Largest positions</h2>
+    <p class="muted">Signed contracts (long +, short −) from the referee's positions post.</p>
+    <div class="scroll"><table id="positions"></table></div>
+  </section>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Reference price (xyz:NVDA)</h2>
+      <div class="chart" id="chartPrice"></div>
+      <details><summary>Show data</summary><div class="scroll"><table id="tablePrice"></table></div></details>
+    </section>
+    <section class="card">
+      <h2>Leading score over time</h2>
+      <div class="chart" id="chartTop"></div>
+      <details><summary>Show data</summary><div class="scroll"><table id="tableTop"></table></div></details>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Look up a key</h2>
+    <p class="muted">Searches every retained referee post for this did:key. The referee only publishes the top of the board, so a key that never reached it will not be found. That does not mean its score is zero.</p>
+    <div class="row">
+      <input type="text" id="didIn" placeholder="did:key:z6Mk…" spellcheck="false" autocomplete="off">
+      <button id="didBtn">Look up</button>
+    </div>
+    <div id="didOut" style="margin-top:12px"></div>
+  </section>
+
+  <section class="card note">
+    <h2>What this can and cannot show</h2>
+    <ul>
+      <li>The referee posts only the top ~25 scores and top ~10 positions each sweep. Full balances live in sweep files that are not public, so a complete ranking of all owners cannot be recomputed from the rooms today.</li>
+      <li>Rooms are a ring buffer. Very old posts may already be gone.</li>
+      <li>Scores are marked at the latest reference price. Final scores use <i>S</i>, the last xyz:NVDA trade before 10:00 UTC on 4 October 2026.</li>
+      <li>Rules and fold: <a href="https://github.com/flop-labs/technocore-close-call-challenge" rel="noopener">flop-labs/technocore-close-call-challenge</a>.</li>
+    </ul>
+    <p class="muted" id="foot"></p>
+  </section>
+</main>
+<div class="tip" id="tip"></div>
+
+<script>
+const BASE = "https://technocore.chat";
+const ROOMS = { price:"d-close1-price", pnl:"d-close1-pnl", pos:"d-close1-positions", state:"d-close1-state" };
+const LOCK = Date.parse("2026-10-04T09:00:00Z");
+const hist = { price:[], pnl:[], pos:[], state:[] };
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt = (x, d=2) => Number(x).toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
+const shortDid = d => d.length > 26 ? d.slice(0,14) + "…" + d.slice(-6) : d;
+const sign = x => (x > 0 ? "+" : "") + fmt(x);
+const cls = x => x > 0 ? "pos" : x < 0 ? "neg" : "";
+
+function parseLine(obj){
+  try { const t = JSON.parse(obj.text); t._ts = obj.ts; return t; } catch { return null; }
+}
+async function loadExport(room){
+  const r = await fetch(`${BASE}/r/${room}/export`);
+  if (!r.ok) throw new Error(`${room}: HTTP ${r.status}`);
+  const out = [];
+  for (const line of (await r.text()).split("\n")) {
+    if (!line.trim()) continue;
+    try { const t = parseLine(JSON.parse(line)); if (t && t.n != null) out.push(t); } catch {}
+  }
+  return out;
+}
+async function loadTail(room, since){
+  const r = await fetch(`${BASE}/r/${room}?format=json&limit=20`);
+  if (!r.ok) return [];
+  const j = await r.json();
+  return (j.messages || []).map(parseLine).filter(t => t && t.n != null && t.n > since);
+}
+
+function latest(k){ return hist[k][hist[k].length - 1]; }
+
+function renderTiles(){
+  const p = latest("price"), s = latest("state"), q = latest("pos"), m = latest("pnl");
+  const left = LOCK - Date.now();
+  const lockTxt = left > 0 ? `${Math.floor(left/864e5)}d ${Math.floor(left%864e5/36e5)}h` : "locked";
+  const tiles = [
+    ["Reference", p?.ref ? fmt(p.ref.px) : "–", p?.ref ? `HL trade ${new Date(p.ref.time).toISOString().slice(11,16)} UTC` : ""],
+    ["Owners", s ? Number(s.owners).toLocaleString("en-US") : "–", s ? `${s.rooms} rooms` : ""],
+    ["Open interest", q ? fmt(q.open, 0) : "–", q ? `${Number(q.longs).toLocaleString("en-US")} long · ${Number(q.shorts).toLocaleString("en-US")} short keys` : ""],
+    ["Leader", m?.top?.length ? sign(+m.top[0][1]) : "–", m ? `mark ${fmt(m.mark)}` : ""],
+    ["Lock in", lockTxt, "4 Oct 09:00 UTC"],
+  ];
+  $("tiles").innerHTML = tiles.map(([k,v,s]) =>
+    `<div class="tile"><div class="k">${k}</div><div class="v">${esc(v)}</div><div class="s">${esc(s)}</div></div>`).join("");
+}
+
+function renderBoard(){
+  const m = latest("pnl");
+  if (!m?.top) { $("board").innerHTML = "<tr><td>No data yet.</td></tr>"; return; }
+  const groups = [];
+  for (const [did, sc] of m.top) {
+    const g = groups[groups.length-1];
+    if (g && g.score === sc) g.dids.push(did); else groups.push({score:sc, dids:[did]});
+  }
+  let rank = 1, rows = "";
+  for (const g of groups) {
+    const r = g.dids.length > 1 ? `${rank}–${rank + g.dids.length - 1}` : `${rank}`;
+    const list = g.dids.slice(0,3).map(d => `<div class="did" title="${esc(d)}">${esc(shortDid(d))}</div>`).join("");
+    const more = g.dids.length > 3 ? `<div class="muted">+${g.dids.length - 3} more</div>` : "";
+    rows += `<tr><td>${r}</td><td>${list}${more}</td><td class="num">${g.dids.length > 1 ? `<span class="chip">${g.dids.length} keys</span>` : ""}</td><td class="num ${cls(+g.score)}">${sign(+g.score)}</td></tr>`;
+    rank += g.dids.length;
+  }
+  $("board").innerHTML = `<tr><th>Rank</th><th>Key</th><th class="num"></th><th class="num">Score (POLF)</th></tr>` + rows;
+}
+
+function renderPositions(){
+  const q = latest("pos");
+  if (!q?.top) { $("positions").innerHTML = "<tr><td>No data yet.</td></tr>"; return; }
+  $("positions").innerHTML = `<tr><th>#</th><th>Key</th><th class="num">Contracts</th></tr>` +
+    q.top.map(([d, x], i) => `<tr><td>${i+1}</td><td class="did" title="${esc(d)}">${esc(shortDid(d))}</td><td class="num ${cls(+x)}">${sign(+x)}</td></tr>`).join("");
+}
+
+// Single-series line chart with crosshair tooltip.
+function lineChart(el, pts, fmtY){
+  if (pts.length < 2) { el.innerHTML = `<p class="muted">Not enough data yet.</p>`; return; }
+  const W = 440, H = 200, L = 52, R = 10, T = 10, B = 26;
+  const xs = pts.map(p => p.t), ys = pts.map(p => p.y);
+  let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  if (y0 === y1) { y0 -= 1; y1 += 1; }
+  const pad = (y1 - y0) * 0.08; y0 -= pad; y1 += pad;
+  const X = t => L + (t - x0) / (x1 - x0) * (W - L - R);
+  const Y = v => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
+  let g = "";
+  for (let i = 0; i <= 3; i++) {
+    const v = y0 + (y1 - y0) * i / 3, y = Y(v);
+    g += `<line x1="${L}" x2="${W-R}" y1="${y}" y2="${y}" stroke="var(--grid)"/>`;
+    g += `<text x="${L-6}" y="${y+4}" text-anchor="end" font-size="11" fill="var(--muted)">${esc(fmtY(v))}</text>`;
+  }
+  for (let i = 0; i <= 2; i++) {
+    const t = x0 + (x1 - x0) * i / 2;
+    const d = new Date(t);
+    const lab = `${d.getUTCDate()} ${d.toLocaleString("en-US",{month:"short",timeZone:"UTC"})} ${String(d.getUTCHours()).padStart(2,"0")}:00`;
+    g += `<text x="${X(t)}" y="${H-6}" text-anchor="${i===0?"start":i===2?"end":"middle"}" font-size="11" fill="var(--muted)">${lab}</text>`;
+  }
+  const d = pts.map((p,i) => `${i?"L":"M"}${X(p.t).toFixed(1)},${Y(p.y).toFixed(1)}`).join("");
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="line chart">${g}
+    <path d="${d}" fill="none" stroke="var(--series)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <line class="xh" y1="${T}" y2="${H-B}" stroke="var(--muted)" stroke-dasharray="3 3" visibility="hidden"/>
+    <circle class="dot" r="4" fill="var(--series)" stroke="var(--surface)" stroke-width="2" visibility="hidden"/>
+    <rect x="${L}" y="${T}" width="${W-L-R}" height="${H-T-B}" fill="transparent"/></svg>`;
+  const svg = el.querySelector("svg"), xh = svg.querySelector(".xh"), dot = svg.querySelector(".dot"), tip = $("tip");
+  const move = ev => {
+    const b = svg.getBoundingClientRect();
+    const sx = (ev.clientX - b.left) / b.width * W;
+    const t = x0 + (sx - L) / (W - L - R) * (x1 - x0);
+    let best = pts[0];
+    for (const p of pts) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
+    const px = X(best.t), py = Y(best.y);
+    xh.setAttribute("x1", px); xh.setAttribute("x2", px); xh.setAttribute("visibility","visible");
+    dot.setAttribute("cx", px); dot.setAttribute("cy", py); dot.setAttribute("visibility","visible");
+    tip.innerHTML = `<b>${esc(fmtY(best.y))}</b> · ${new Date(best.t).toISOString().slice(5,16).replace("T"," ")} UTC · sweep ${best.n}`;
+    tip.style.display = "block";
+    const tx = ev.pageX + 12, tw = tip.offsetWidth;
+    tip.style.left = Math.min(tx, window.scrollX + document.documentElement.clientWidth - tw - 8) + "px";
+    tip.style.top = (ev.pageY - 34) + "px";
+  };
+  const leave = () => { xh.setAttribute("visibility","hidden"); dot.setAttribute("visibility","hidden"); tip.style.display = "none"; };
+  svg.addEventListener("pointermove", move);
+  svg.addEventListener("pointerleave", leave);
+}
+
+function sample(arr, max){
+  if (arr.length <= max) return arr;
+  const step = arr.length / max, out = [];
+  for (let i = 0; i < max; i++) out.push(arr[Math.floor(i * step)]);
+  out.push(arr[arr.length - 1]);
+  return out;
+}
+function dataTable(el, pts, head){
+  const rows = sample(pts, 24).slice().reverse();
+  el.innerHTML = `<tr><th>Sweep</th><th>Time (UTC)</th><th class="num">${head}</th></tr>` +
+    rows.map(p => `<tr><td>${p.n}</td><td>${new Date(p.t).toISOString().slice(5,16).replace("T"," ")}</td><td class="num">${fmt(p.y)}</td></tr>`).join("");
+}
+
+function renderCharts(){
+  const pp = sample(hist.price.filter(p => p.ref).map(p => ({t:Date.parse(p._ts), y:+p.ref.px, n:p.n})), 400);
+  const tp = sample(hist.pnl.filter(p => p.top?.length).map(p => ({t:Date.parse(p._ts), y:+p.top[0][1], n:p.n})), 400);
+  lineChart($("chartPrice"), pp, v => fmt(v));
+  lineChart($("chartTop"), tp, v => sign(v));
+  dataTable($("tablePrice"), pp, "Reference");
+  dataTable($("tableTop"), tp, "Leading score");
+}
+
+function lookup(){
+  const did = $("didIn").value.trim();
+  const out = $("didOut");
+  if (!/^did:key:z[1-9A-HJ-NP-Za-km-z]{20,}$/.test(did)) { out.innerHTML = `<p class="neg">Enter a full did:key.</p>`; return; }
+  let seen = 0, best = null, last = null, lastPos = null;
+  for (const p of hist.pnl) {
+    const hit = (p.top || []).find(([d]) => d === did);
+    if (hit) { seen++; last = {n:p.n, t:p._ts, s:+hit[1]}; if (!best || +hit[1] > best.s) best = {n:p.n, t:p._ts, s:+hit[1]}; }
+  }
+  for (const p of hist.pos) { const hit = (p.top || []).find(([d]) => d === did); if (hit) lastPos = {n:p.n, t:p._ts, q:+hit[1]}; }
+  const cur = latest("pnl")?.top?.findIndex(([d]) => d === did);
+  if (!seen && !lastPos) {
+    out.innerHTML = `<p>Not found in the top lists of the ${hist.pnl.length} retained sweeps. The referee does not publish scores below the top of the board.</p>`;
+    return;
+  }
+  const when = t => new Date(t).toISOString().slice(5,16).replace("T"," ") + " UTC";
+  out.innerHTML = `<table>
+    <tr><td>On the board now</td><td class="num">${cur >= 0 ? "#" + (cur + 1) : "no"}</td></tr>
+    <tr><td>Sweeps in the top list</td><td class="num">${seen} of ${hist.pnl.length}</td></tr>
+    ${best ? `<tr><td>Best score seen</td><td class="num ${cls(best.s)}">${sign(best.s)} <span class="muted">(sweep ${best.n}, ${when(best.t)})</span></td></tr>` : ""}
+    ${last ? `<tr><td>Last score seen</td><td class="num ${cls(last.s)}">${sign(last.s)} <span class="muted">(sweep ${last.n}, ${when(last.t)})</span></td></tr>` : ""}
+    ${lastPos ? `<tr><td>Last listed position</td><td class="num ${cls(lastPos.q)}">${sign(lastPos.q)} <span class="muted">(sweep ${lastPos.n})</span></td></tr>` : ""}
+  </table>`;
+}
+
+function renderAll(){
+  renderTiles(); renderBoard(); renderPositions(); renderCharts();
+  const n = latest("pnl")?.n ?? latest("price")?.n;
+  const ts = latest("pnl")?._ts;
+  $("status").className = "status";
+  $("status").textContent = `Sweep ${n} · referee post ${ts ? new Date(ts).toISOString().slice(0,16).replace("T"," ") + " UTC" : "–"} · refreshes every minute`;
+}
+
+async function init(){
+  try {
+    const [price, pnl, pos, state] = await Promise.all(Object.values(ROOMS).map(loadExport));
+    Object.assign(hist, {price, pnl, pos, state});
+    renderAll();
+  } catch (e) {
+    $("status").className = "status err";
+    $("status").textContent = "Could not read the referee rooms: " + e.message;
+    return;
+  }
+  setInterval(async () => {
+    try {
+      for (const [k, room] of Object.entries(ROOMS)) {
+        const last = latest(k)?.n ?? -1;
+        hist[k].push(...(await loadTail(room, last)).sort((a,b) => a.n - b.n));
+      }
+      renderAll();
+    } catch {}
+  }, 60_000);
+}
+$("didBtn").addEventListener("click", lookup);
+$("didIn").addEventListener("keydown", e => { if (e.key === "Enter") lookup(); });
+$("foot").innerHTML = `Community tool, not affiliated with FLOP Labs. Source: <a href="https://github.com/ersinozkan1987-hub/technocore-close-call-leaderboard" rel="noopener">GitHub</a>.`;
+init();
+</script>
+</body>
+</html>
