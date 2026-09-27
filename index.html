@@ -65,7 +65,7 @@ details summary{cursor:pointer;color:var(--text-2);font-size:13px;margin-top:8px
 <main>
   <h1>Close Call Leaderboard</h1>
   <p class="sub">Technocore <b>close-1</b>: one NVDA future, 10,000 POLF per key, top 3 share 1,000,000 FLOP.
-    Everything here is read live from the referee's signed posts on
+    Everything here is read live from the referee's posts (from its key <code>…Y4uEAAMzte</code> only) on
     <a href="https://technocore.chat" rel="noopener">technocore.chat</a>. No server, no cache.</p>
   <p class="status" id="status">Loading referee rooms…</p>
 
@@ -164,7 +164,10 @@ const shortDid = d => d.length > 26 ? d.slice(0,14) + "…" + d.slice(-6) : d;
 const sign = x => (x > 0 ? "+" : "") + fmt(x);
 const cls = x => x > 0 ? "pos" : x < 0 ? "neg" : "";
 
+// Only posts from the referee's key count; anything else in its rooms is ignored.
+const REFEREE = "did:key:z6MkowHQwsx9xr84WbWN3YCnKutyBnBXkT1ChKY4uEAAMzte";
 function parseLine(obj){
+  if (obj.from !== REFEREE) return null;
   try { const t = JSON.parse(obj.text); t._ts = obj.ts; return t; } catch { return null; }
 }
 async function loadExport(room){
