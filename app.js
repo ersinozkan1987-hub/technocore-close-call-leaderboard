@@ -1,8 +1,9 @@
 import { makeVerifier, checkRecord, nonceDigits } from "./verify.js";
-import { REFEREE, ROOMS, newSeason, applyPosts, collectIds, expand, lastScored } from "./lib/season.js";
-import { estimatePositions, settleAt, prizes, priceToPass, groupTies, fees, LOCK, LOCK_SWEEP, MINT } from "./lib/score.js";
+import { newSeason, applyPosts, collectIds, expand, lastScored } from "./lib/season.js";
+import { contest, configure, refereeRooms, lockMs } from "./lib/contest.js";
+import { estimatePositions, settleAt, prizes, priceToPass, groupTies, fees } from "./lib/score.js";
 
-const BASE = "https://technocore.chat";
+let BASE = contest.chat, REFEREE = contest.referee, ROOMS = refereeRooms();
 const HL = "https://api.hyperliquid.xyz/info";
 const SEASON_MAX_AGE = 2 * 3600e3;
 
@@ -90,9 +91,9 @@ async function tail() {
 
 async function hlPrice() {
   try {
-    const r = await fetch(HL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "allMids", dex: "xyz" }) });
+    const r = await fetch(HL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "allMids", dex: contest.hyperliquid_dex }) });
     const j = await r.json();
-    const px = Number(j["xyz:NVDA"]);
+    const px = Number(j[contest.market]);
     if (px > 0) { st.live = { px, at: Date.now(), err: 0 }; return true; }
   } catch { /* fall through */ }
   st.live.err++;
@@ -133,7 +134,7 @@ function renderStatus() {
   const s = st.season.sweeps.at(-1), sc = st.scored;
   const el = $("status");
   el.className = "status";
-  el.textContent = `Sweep ${s?.n ?? "–"} of ${LOCK_SWEEP} · referee post ${sc?.ts ? when(sc.ts) : "–"} · ${st.source} · live tail every minute, Hyperliquid every 5 s`;
+  el.textContent = `Sweep ${s?.n ?? "–"} of ${contest.lock_sweep} · referee post ${sc?.ts ? when(sc.ts) : "–"} · ${st.source} · live tail every minute, Hyperliquid every 5 s`;
   const b = st.verify.build, l = st.verify.live;
   let html = "";
   if (!st.verify.available) html += `<span class="badge warn">signature check unavailable in this browser</span>`;
@@ -145,7 +146,7 @@ function renderStatus() {
 function renderTiles() {
   const s = st.scored, last = st.season.sweeps.at(-1);
   const rows = standings();
-  const left = LOCK - Date.now();
+  const left = lockMs() - Date.now();
   const lockTxt = left > 0 ? `${Math.floor(left / 864e5)}d ${Math.floor((left % 864e5) / 36e5)}h ${Math.floor((left % 36e5) / 6e4)}m` : "locked";
   const live = st.live.px;
   const lead = rows[0];
@@ -158,7 +159,7 @@ function renderTiles() {
     ["Prize line", pl != null ? sign(pl) : "–", "lowest score still paid"],
     ["Owners", last?.owners != null ? int(last.owners) : "–", last?.rooms != null ? `${last.rooms} rooms` : ""],
     ["Open interest", last?.open != null ? int(last.open) : "–", last?.longs != null ? `${int(last.longs)} long · ${int(last.shorts)} short keys` : ""],
-    ["Lock in", lockTxt, "4 Oct 09:00 UTC"],
+    ["Lock in", lockTxt, new Date(lockMs()).toUTCString().replace(/:\d\d GMT$/, " UTC").slice(5)],
   ];
   $("tiles").innerHTML = tiles.map(([k, v, s, c]) => `<div class="tile ${c || ""}"><div class="k">${k}</div><div class="v">${esc(v)}</div><div class="s">${esc(s)}</div></div>`).join("");
 }
@@ -285,13 +286,13 @@ async function loadIds() {
   const r = await fetch("data/ids.json", { cache: "no-store" });
   if (r.ok) { st.ids = await r.json(); return st.ids; }
   // No build output: read the flow room's export here and verify it.
-  const e = await fetch(`${BASE}/r/d-close1-flow/export`);
+  const e = await fetch(`${BASE}/r/${contest.rooms.flow}/export`);
   if (!e.ok) throw new Error("flow export " + e.status);
   const posts = [];
   for (const line of (await e.text()).split("\n")) {
     if (!line.trim()) continue;
     let obj; try { obj = JSON.parse(line); } catch { continue; }
-    const c = await checkRecord(verifier, REFEREE, "d-close1-flow", line, obj);
+    const c = await checkRecord(verifier, REFEREE, contest.rooms.flow, line, obj);
     if (!c.ok) continue;
     try { posts.push(JSON.parse(obj.text)); } catch { /* skip */ }
   }
@@ -360,7 +361,7 @@ async function reconcile() {
       <tr><td>Fees paid</td><td class="num">${fmt(fee)} POLF</td></tr>
       <tr><td>Breakeven S</td><td class="num">${be != null ? fmt(be) : "–"}</td></tr>
       <tr><td>Score at ${fmt(S)} (${currentS().src})</td><td class="num ${cls(score)}">${sign(score)} POLF</td></tr>
-      <tr><td>Free POLF (if these are all your trades)</td><td class="num">${fmt(MINT - Math.abs(cost) - fee)}</td></tr>
+      <tr><td>Free POLF (if these are all your trades)</td><td class="num">${fmt(contest.mint - Math.abs(cost) - fee)}</td></tr>
     </table>`;
   }
   out.innerHTML = `<div class="scroll"><table>${html}</table></div>${summary}<p class="muted" style="margin-top:6px">"Not listed" means the id is in no published list; the referee omits most ids on busy sweeps, so it may still have settled.</p>`;
@@ -529,14 +530,14 @@ function lookup() {
 const tape = { msgs: [], lastSeq: 0, at: null, firstAt: null };
 
 async function loadTape() {
-  const r = await fetch(`${BASE}/r/close1?format=json&limit=200`);
+  const r = await fetch(`${BASE}/r/${contest.rooms.trading}?format=json&limit=200`);
   if (!r.ok) return false;
   const j = await r.json();
   for (const m of j.messages || []) {
     if (m.seq <= tape.lastSeq) continue;
     tape.lastSeq = m.seq;
     let t; try { t = JSON.parse(m.text); } catch { continue; }
-    if (t.season && t.season !== "close-1") continue;
+    if (t.season && t.season !== contest.id) continue;
     if (t.t === "trade" && t.terms) tape.msgs.push({ kind: "trade", seq: m.seq, ts: m.ts, from: m.from, terms: t.terms, taker: t.taker });
     else if (t.t === "offer" && t.terms) tape.msgs.push({ kind: "offer", seq: m.seq, ts: m.ts, from: m.from, terms: t.terms });
     else if (t.t === "owner") tape.msgs.push({ kind: "owner", seq: m.seq, ts: m.ts, from: m.from });
@@ -738,7 +739,7 @@ function consistency() {
     if (s.unlisted) { counts.rooms_unlisted++; findings.push({ n: s.n, check: "rooms_unlisted", detail: `${s.unlisted} room(s) dropped` }); }
     if (!s.top?.length && s.n > 1) { counts.no_top_list++; findings.push({ n: s.n, check: "no_top_list", detail: "no pnl post for this sweep" }); }
   }
-  return { generated: new Date().toISOString(), contest: "close-1", referee: REFEREE, sweeps: sw.length, first: sw[0]?.n, last: sw.at(-1)?.n, verified: st.verify.build, counts, findings };
+  return { generated: new Date().toISOString(), contest: contest.id, referee: REFEREE, sweeps: sw.length, first: sw[0]?.n, last: sw.at(-1)?.n, verified: st.verify.build, counts, findings };
 }
 
 const CHECK_TEXT = {
@@ -762,7 +763,7 @@ $("consDl").addEventListener("click", () => {
   if (!consistencyFindings) return;
   const blob = new Blob([JSON.stringify(consistencyFindings, null, 1)], { type: "application/json" });
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob); a.download = `close-1-referee-consistency-${consistencyFindings.last}.json`; a.click();
+  a.href = URL.createObjectURL(blob); a.download = `${contest.id}-referee-consistency-${consistencyFindings.last}.json`; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 });
 
@@ -776,6 +777,7 @@ function renderFast() { renderTiles(); renderBoard(); renderSim(); }
 
 async function init() {
   try { initTheme(); } catch { /* no DOM */ }
+  try { const r = await fetch("contest.json", { cache: "no-store" }); if (r.ok) { configure(await r.json()); BASE = contest.chat; REFEREE = contest.referee; ROOMS = refereeRooms(); } } catch { /* defaults */ }
   verifier = await makeVerifier(REFEREE);
   st.verify.available = !!verifier;
   try {

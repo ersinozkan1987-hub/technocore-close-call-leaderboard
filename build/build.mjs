@@ -2,15 +2,20 @@
 // Node ≥ 20, no dependencies. Every record is signature-checked; unverified records are dropped and counted.
 //   node build/build.mjs            write data/
 //   node build/build.mjs --check    build in memory and print a summary only
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { makeVerifier, checkRecord } from "../verify.js";
-import { REFEREE, ROOMS, newSeason, applyPosts, collectIds, expand, lastScored } from "../lib/season.js";
+import { newSeason, applyPosts, collectIds, expand, lastScored } from "../lib/season.js";
+import { contest, configure, refereeRooms } from "../lib/contest.js";
 import { estimatePositions, settleAt, prizes, groupTies } from "../lib/score.js";
 
-export const BASE = "https://technocore.chat";
-export const PAGE_URL = "https://ersinozkan1987-hub.github.io/technocore-close-call-leaderboard/";
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+try { configure(JSON.parse(await readFile(path.join(ROOT, "contest.json"), "utf8"))); } catch { /* defaults in lib/contest.js */ }
+export const BASE = contest.chat;
+export const PAGE_URL = contest.page;
+export const REFEREE = contest.referee;
+export const ROOMS = refereeRooms();
 
 async function fetchText(url) {
   const r = await fetch(url, { signal: AbortSignal.timeout(60_000) });
@@ -49,8 +54,8 @@ export function board(season, generated) {
   const line = (rs, f) => { const paid = rs.filter((r) => r.prize > 0); return paid.length ? Math.min(...paid.map((r) => r[f])) : null; };
   const totals = season.sweeps.reduce((a, s) => { a.settled += s.settled || 0; a.void += s.void || 0; return a; }, { settled: 0, void: 0 });
   return {
-    contest: "close-1", referee: REFEREE, generated, page: PAGE_URL,
-    sweep: last.n, sweep_ts: last.ts, lock_sweep: 2556, verified: season.verified,
+    contest: contest.id, referee: REFEREE, generated, page: PAGE_URL,
+    sweep: last.n, sweep_ts: last.ts, lock_sweep: contest.lock_sweep, verified: season.verified,
     reference: last.ref, reference_time: last.refTime, reference_age_s: last.age, global: last.global, limits: [last.lo, last.hi],
     owners: last.owners, rooms: last.rooms, longs: last.longs, shorts: last.shorts, open_contracts: last.open,
     settled_total: totals.settled, void_total: totals.void,
@@ -103,7 +108,7 @@ export function atom(evs, generated) {
   const items = evs.slice(-60).reverse();
   return `<?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
-  <title>Close Call (close-1) leaderboard events</title>
+  <title>${xml(contest.title)} (${contest.id}) leaderboard events</title>
   <link href="${PAGE_URL}"/>
   <link rel="self" href="${PAGE_URL}data/feed.xml"/>
   <id>${PAGE_URL}data/feed.xml</id>
@@ -132,7 +137,7 @@ export function keyFiles(season) {
   for (const [k, f] of files) {
     const scores = f.history.map((h) => h[1]);
     out.push({ key: season.keys[k], data: {
-      key: season.keys[k], contest: "close-1", generated: season.generated,
+      key: season.keys[k], contest: contest.id, generated: season.generated,
       sweeps_in_top: f.history.length, at_one: f.history.filter((h) => h[2] === 1).length,
       best: scores.length ? Math.max(...scores) : null, last: f.history.at(-1) || null, last_position: f.positions.at(-1) || null,
       history: f.history, positions: f.positions,
@@ -170,7 +175,7 @@ if (isMain) {
   console.log(`sweeps ${season.sweeps.length} (1..${season.sweeps.at(-1)?.n}) keys ${season.keys.length} verified ${season.verified.ok} bad ${season.verified.bad} ids ${Object.keys(ids.settled).length}/${Object.keys(ids.void).length} in ${Date.now() - t0} ms`);
   if (season.verified.ok === 0 || !last) { console.error("build: nothing verified"); process.exit(1); }
   if (!check) {
-    const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "data");
+    const dir = path.join(ROOT, "data");
     await mkdir(dir, { recursive: true });
     await writeFile(path.join(dir, "season.json"), JSON.stringify(season));
     await writeFile(path.join(dir, "board.json"), JSON.stringify(b, null, 1));

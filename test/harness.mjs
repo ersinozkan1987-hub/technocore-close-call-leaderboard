@@ -20,7 +20,7 @@ globalThis.window = { scrollX: 0 }; globalThis.matchMedia = () => ({ matches: fa
 globalThis.setInterval = () => 0;
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, opts) => {
-  if (typeof url === "string" && url.startsWith("data/")) {
+  if (typeof url === "string" && (url.startsWith("data/") || url === "contest.json")) {
     try { const body = await readFile(path.join(ROOT, url), "utf8"); return new Response(body, { status: 200 }); }
     catch { return new Response("", { status: 404 }); }
   }
