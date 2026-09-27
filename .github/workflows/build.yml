@@ -31,7 +31,7 @@ jobs:
       - name: Package the site
         run: |
           mkdir -p site
-          cp index.html app.js verify.js style.css site/
+          cp index.html app.js verify.js style.css contest.json site/
           cp -r lib data site/
       - uses: actions/upload-pages-artifact@v3
         with:
