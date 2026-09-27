@@ -73,7 +73,7 @@ details summary{cursor:pointer;color:var(--text-2);font-size:13px;margin-top:8px
 
   <section class="card">
     <h2>Top scores</h2>
-    <p class="muted">Score = POLF − 10,000 at the referee's mark. Keys with the exact same score are grouped. Identical scores usually come from one operator's keys trading in lockstep.</p>
+    <p class="muted">Score = POLF − 10,000 at the referee's global price (its own trades' VWAP), not the Hyperliquid reference. Keys with the exact same score are grouped. Identical scores usually come from one operator's keys trading in lockstep.</p>
     <div class="scroll"><table id="board"></table></div>
   </section>
 
@@ -144,7 +144,7 @@ details summary{cursor:pointer;color:var(--text-2);font-size:13px;margin-top:8px
     <ul>
       <li>The referee posts only the top ~25 scores and top ~10 positions each sweep. Full balances live in sweep files that are not public, so a complete ranking of all owners cannot be recomputed from the rooms today.</li>
       <li>Rooms are a ring buffer. Very old posts may already be gone.</li>
-      <li>Scores are marked at the latest reference price. Final scores use <i>S</i>, the last xyz:NVDA trade before 10:00 UTC on 4 October 2026.</li>
+      <li>The referee marks published scores at its <b>global</b> price (the volume-weighted price of the contest's own settled trades, rule 14), not at the Hyperliquid reference. Final scores use <i>S</i>, the last xyz:NVDA trade on Hyperliquid before 10:00 UTC on 4 October 2026, so a key's final score moves by its position × (S − global).</li>
       <li>Rules and fold: <a href="https://github.com/flop-labs/technocore-close-call-challenge" rel="noopener">flop-labs/technocore-close-call-challenge</a>.</li>
     </ul>
     <p class="muted" id="foot"></p>
