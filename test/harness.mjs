@@ -103,3 +103,6 @@ if (!(els.chartSides?.innerHTML || "").includes("<svg")) f3.push("sides chart");
 if (!/distinct keys/.test(text("tenureNote"))) f3.push("tenure");
 if (f3.length) { console.error("FAILED phase 3:", f3.join("; ")); process.exit(1); }
 console.log("phase 3 checks passed");
+console.log("consist  :", text("consNote"), "|", text("consistency").slice(0, 300));
+if (!/findings over sweeps/.test(text("consNote"))) { console.error("FAILED: consistency"); process.exit(1); }
+console.log("phase 4 checks passed");

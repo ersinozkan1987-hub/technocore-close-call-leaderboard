@@ -681,11 +681,60 @@ function initTheme() {
   });
 }
 
+/* ---------- season-long consistency checks ---------- */
+
+let consistencyFindings = null;
+
+function consistency() {
+  const sw = st.season.sweeps.filter((s) => s.ts);
+  const findings = [];
+  const counts = { gap_in_numbering: 0, late_sweep: 0, mints_vs_owners: 0, stale_reference: 0, missed_ranges: 0, rooms_unlisted: 0, no_top_list: 0 };
+  for (let i = 0; i < sw.length; i++) {
+    const s = sw[i], p = sw[i - 1];
+    if (p) {
+      if (s.n !== p.n + 1) { counts.gap_in_numbering++; findings.push({ n: s.n, check: "gap_in_numbering", detail: `previous sweep is #${p.n}` }); }
+      const d = (Date.parse(s.ts) - Date.parse(p.ts)) / 1000;
+      if (d > 420) { counts.late_sweep++; findings.push({ n: s.n, check: "late_sweep", detail: `${Math.round(d)} s after #${p.n}` }); }
+      if (p.owners != null && s.owners != null && s.mints != null && s.owners - p.owners !== s.mints) { counts.mints_vs_owners++; findings.push({ n: s.n, check: "mints_vs_owners", detail: `owners +${s.owners - p.owners}, mints listed+omitted ${s.mints}` }); }
+    }
+    if (s.age != null && s.age > 300) { counts.stale_reference++; findings.push({ n: s.n, check: "stale_reference", detail: `reference ${s.age} s old` }); }
+    if (s.missed) { counts.missed_ranges++; findings.push({ n: s.n, check: "missed_ranges", detail: `${s.missed} range(s) not read` }); }
+    if (s.unlisted) { counts.rooms_unlisted++; findings.push({ n: s.n, check: "rooms_unlisted", detail: `${s.unlisted} room(s) dropped` }); }
+    if (!s.top?.length && s.n > 1) { counts.no_top_list++; findings.push({ n: s.n, check: "no_top_list", detail: "no pnl post for this sweep" }); }
+  }
+  return { generated: new Date().toISOString(), contest: "close-1", referee: REFEREE, sweeps: sw.length, first: sw[0]?.n, last: sw.at(-1)?.n, verified: st.verify.build, counts, findings };
+}
+
+const CHECK_TEXT = {
+  gap_in_numbering: "Sweep numbers without a gap",
+  late_sweep: "Sweeps landing within 7 minutes of the previous one (rule 13: every five minutes)",
+  mints_vs_owners: "Mints (listed + omitted) equal to the growth in owners (rule 3)",
+  stale_reference: "Reference newer than 5 minutes (rule 11: a stale one stands, but the price room must say so)",
+  missed_ranges: "No room ranges the referee could not read",
+  rooms_unlisted: "No registered rooms dropped from the list (rule 5 says only deleted rooms leave it; see #11)",
+  no_top_list: "A pnl post for every sweep",
+};
+
+function renderConsistency() {
+  const c = consistency();
+  consistencyFindings = c;
+  $("consistency").innerHTML = `<table>${Object.entries(c.counts).map(([k, v]) => `<tr><td style="white-space:nowrap"><span class="badge ${v === 0 ? "ok" : v < 5 ? "warn" : "bad"}">${v === 0 ? "pass" : v + " sweeps"}</span></td><td>${esc(CHECK_TEXT[k])}</td></tr>`).join("")}</table>`;
+  $("consNote").textContent = `${c.findings.length} findings over sweeps ${c.first}–${c.last}`;
+}
+
+$("consDl").addEventListener("click", () => {
+  if (!consistencyFindings) return;
+  const blob = new Blob([JSON.stringify(consistencyFindings, null, 1)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = `close-1-referee-consistency-${consistencyFindings.last}.json`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+
 /* ---------- orchestration ---------- */
 
 function renderAll() {
   recompute();
-  renderStatus(); renderTiles(); renderBoard(); renderSim(); renderCharts(); renderSides(); renderLeaders(); renderTenure(); renderPositions(); renderHealth(); renderVoids(); renderTape();
+  renderStatus(); renderTiles(); renderBoard(); renderSim(); renderCharts(); renderSides(); renderLeaders(); renderTenure(); renderPositions(); renderHealth(); renderConsistency(); renderVoids(); renderTape();
 }
 function renderFast() { renderTiles(); renderBoard(); renderSim(); }
 
