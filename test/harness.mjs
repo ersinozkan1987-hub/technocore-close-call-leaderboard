@@ -16,7 +16,7 @@ function el(id) {
   return (els[id] = o);
 }
 globalThis.document = { getElementById: el, documentElement: { clientWidth: 400 } };
-globalThis.window = { scrollX: 0 };
+globalThis.window = { scrollX: 0 }; globalThis.matchMedia = () => ({ matches: false }); globalThis.localStorage = { getItem: () => null, setItem() {} }; document.documentElement.getAttribute = () => null; document.documentElement.setAttribute = () => {};
 globalThis.setInterval = () => 0;
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, opts) => {
@@ -36,12 +36,12 @@ const fail = [];
 const expect = (cond, msg) => { if (!cond) fail.push(msg); };
 
 console.log("status   :", text("status"));
-console.log("verify   :", text("verify"));
+console.log("verify   :", text("verifyBadges"));
 console.log("tiles    :", text("tiles").slice(0, 400));
 console.log("boardNote:", text("boardNote"));
 console.log("board    :", text("board").slice(0, 500));
 expect(/Sweep \d+/.test(text("status")), "status has a sweep number");
-expect(/verified/.test(text("verify")), "verification badge present");
+expect(/verified/.test(text("verifyBadges")), "verification badge present");
 expect(text("board").includes("FLOP if final"), "standings rendered");
 expect(app.standings().length > 0, "standings non-empty");
 expect(app.st.live.px > 0, "Hyperliquid live price fetched");
@@ -90,3 +90,16 @@ if (!/Last sweep/.test(text("health"))) f2.push("health rendered");
 if (!/funds/.test(text("voids"))) f2.push("void reasons rendered");
 if (f2.length) { console.error("FAILED phase 2:", f2.join("; ")); process.exit(1); }
 console.log("phase 2 checks passed");
+
+// Simulator, tenure, sides
+console.log("sim      :", text("simLabel"), "|", text("simPaid").slice(0, 200));
+console.log("bands    :", text("simBands").slice(0, 300));
+console.log("tenure   :", text("tenureNote"), "|", text("tenure").slice(0, 150));
+const f3 = [];
+if (!/S = \d/.test(text("simLabel"))) f3.push("sim label");
+if (!/FLOP/.test(text("simPaid"))) f3.push("sim paid table");
+if (!/S range/.test(text("simBands"))) f3.push("sim bands");
+if (!(els.chartSides?.innerHTML || "").includes("<svg")) f3.push("sides chart");
+if (!/distinct keys/.test(text("tenureNote"))) f3.push("tenure");
+if (f3.length) { console.error("FAILED phase 3:", f3.join("; ")); process.exit(1); }
+console.log("phase 3 checks passed");

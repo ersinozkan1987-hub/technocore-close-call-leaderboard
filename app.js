@@ -139,7 +139,7 @@ function renderStatus() {
   if (!st.verify.available) html += `<span class="badge warn">signature check unavailable in this browser</span>`;
   if (b) html += `<span class="badge ${b.bad ? "warn" : "ok"}">build: ${int(b.ok)} referee posts verified${b.bad ? `, ${b.bad} rejected` : ""} · ${when(st.buildAt)}</span>`;
   if (l.ok || l.bad) html += `<span class="badge ${l.bad ? "warn" : "ok"}">live: ${l.ok} verified here${l.bad ? `, ${l.bad} rejected` : ""}</span>`;
-  $("verify").innerHTML = html;
+  $("verifyBadges").innerHTML = html;
 }
 
 function renderTiles() {
@@ -224,6 +224,58 @@ function solve() {
     ${line ? txt(line, "To reach the prize line") : ""}
   </table><p class="muted" style="margin-top:6px">Leader and prize line are the listed keys re-marked at S; keys the referee does not publish are unknown.</p>`;
 }
+
+/* ---------- price simulator ---------- */
+
+const sim = { S: null, touched: false };
+
+function simRange() {
+  const c = currentS().S;
+  return { lo: c * 0.95, hi: c * 1.05, c };
+}
+
+function simPaid(S) {
+  return prizes(settleAt(st.scored, st.positions, S)).filter((r) => r.prize > 0);
+}
+
+function renderSim() {
+  if (!st.scored) return;
+  const { lo, hi, c } = simRange();
+  const slider = $("simS");
+  if (!sim.touched || sim.S == null) { sim.S = c; slider.value = "300"; }
+  const S = sim.S;
+  $("simLabel").textContent = `S = ${fmt(S)} (${sign((S / c - 1) * 100, 2)}% from ${fmt(c)})`;
+  const paid = simPaid(S);
+  const groups = [];
+  for (const r of paid) { const g = groups[groups.length - 1]; if (g && g.settle === r.settle) g.rows.push(r); else groups.push({ settle: r.settle, rows: [r] }); }
+  $("simPaid").innerHTML = `<tr><th>Place</th><th>Key</th><th class="num">Score at S</th><th class="num">FLOP</th></tr>` + groups.map((g) => {
+    const f = g.rows[0];
+    return `<tr><td>${f.rank}${g.rows.length > 1 ? `–${f.rank + g.rows.length - 1}` : ""}${g.rows.some((r) => r.openEnded) ? "+" : ""}</td><td>${g.rows.slice(0, 3).map((r) => `<div class="did" title="${esc(r.key)}">${esc(shortDid(r.key))}</div>`).join("")}${g.rows.length > 3 ? `<div class="muted">+${g.rows.length - 3} more</div>` : ""}</td><td class="num ${cls(g.settle)}">${sign(g.settle)}</td><td class="num">${flop(f.prize)}${g.rows.length > 1 ? " each" : ""}</td></tr>`;
+  }).join("");
+  // bands: walk the price range and merge consecutive prices with the same paid set
+  const bands = [];
+  const step = Math.max(0.01, Math.round((hi - lo) / 400 * 100) / 100);
+  for (let p = lo; p <= hi + 1e-9; p += step) {
+    const P = Math.round(p * 100) / 100;
+    const set = simPaid(P);
+    const sig = set.map((r) => r.key).sort().join("|");
+    const b = bands[bands.length - 1];
+    if (b && b.sig === sig) b.to = P; else bands.push({ sig, from: P, to: P, set });
+  }
+  $("simBands").innerHTML = `<tr><th>S range</th><th>Paid keys</th></tr>` + bands.map((b) => {
+    const g = groupTies(b.set.map((r) => [r.key, r.prize]));
+    const who = g.map((x) => `${x.keys.length > 1 ? x.keys.length + " keys" : shortDid(x.keys[0])} <span class="muted">(${flop(x.score)}${x.keys.length > 1 ? " each" : ""})</span>`).join(", ");
+    const cur = S >= b.from - step / 2 && S <= b.to + step / 2;
+    return `<tr${cur ? ' style="font-weight:600"' : ""}><td class="num" style="text-align:left;white-space:nowrap">${fmt(b.from)} – ${fmt(b.to)}${b.from <= lo + step / 2 ? " ↓" : ""}${b.to >= hi - step ? " ↑" : ""}</td><td class="did" style="font-family:inherit">${who}</td></tr>`;
+  }).join("");
+}
+
+$("simS").addEventListener("input", (e) => {
+  const { lo, hi } = simRange();
+  sim.touched = true;
+  sim.S = Math.round((lo + (hi - lo) * (+e.target.value / 600)) * 100) / 100;
+  renderSim();
+});
 
 /* ---------- reconcile ---------- */
 
@@ -589,15 +641,56 @@ function renderVoids() {
   $("voids").innerHTML = entries.length ? `<table>${entries.map(([r, c]) => { const pct = c / listed * 100; return `<tr><td>${esc(VOID_REASONS[r] || r)}</td><td class="num" style="white-space:nowrap">${pct.toFixed(1)} % · ${int(c)}</td><td style="width:30%"><div style="height:8px;border-radius:4px;background:var(--s2);width:${pct.toFixed(1)}%"></div></td></tr>`; }).join("")}</table>` : `<p class="muted">No voided trade listed yet.</p>`;
 }
 
+/* ---------- tenure, sides, theme ---------- */
+
+function renderTenure() {
+  const keys = st.season.keys;
+  const scored = st.season.sweeps.filter((s) => s.top?.length);
+  const stat = new Map();
+  for (const s of scored) {
+    s.top.forEach(([k, sc], i) => {
+      const t = stat.get(k) || { n: 0, one: 0, best: -Infinity, bestRank: 99, first: s.n, last: s.n };
+      t.n++; if (i === 0) t.one++; if (sc > t.best) t.best = sc; if (i + 1 < t.bestRank) t.bestRank = i + 1; t.last = s.n;
+      stat.set(k, t);
+    });
+  }
+  const rows = [...stat.entries()].sort((a, b) => b[1].n - a[1].n || b[1].one - a[1].one).slice(0, 15);
+  $("tenureNote").textContent = `${stat.size} distinct keys have appeared in the published top list over ${scored.length} sweeps.`;
+  $("tenure").innerHTML = `<tr><th>Key</th><th class="num">Sweeps in top 25</th><th class="num">At #1</th><th class="num">Best</th><th class="num">Seen</th></tr>` +
+    rows.map(([k, t]) => `<tr><td class="did" title="${esc(keys[k])}">${esc(shortDid(keys[k]))}</td><td class="num">${t.n}</td><td class="num">${t.one}</td><td class="num ${cls(t.best)}">${sign(t.best)} <span class="muted">#${t.bestRank}</span></td><td class="num muted">${t.first}–${t.last}</td></tr>`).join("");
+}
+
+function renderSides() {
+  const sw = st.season.sweeps;
+  const pts = (f) => sample(sw.filter((s) => s.ts && f(s) != null).map((s) => ({ t: Date.parse(s.ts), y: f(s), n: s.n })), 500);
+  const series = [{ name: "Keys long", color: "var(--s3)", pts: pts((s) => s.longs) }, { name: "Keys short", color: "var(--s2)", pts: pts((s) => s.shorts) }];
+  chart($("chartSides"), { series, fmtY: int, zero: true });
+  dataTable($("tableSides"), series, int);
+}
+
+function initTheme() {
+  const root = document.documentElement;
+  let saved = null;
+  try { saved = localStorage.getItem("theme"); } catch { /* private mode */ }
+  if (saved === "dark" || saved === "light") root.setAttribute("data-theme", saved);
+  $("theme").addEventListener("click", () => {
+    const dark = root.getAttribute("data-theme") === "dark" || (!root.getAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);
+    const next = dark ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("theme", next); } catch { /* ignore */ }
+  });
+}
+
 /* ---------- orchestration ---------- */
 
 function renderAll() {
   recompute();
-  renderStatus(); renderTiles(); renderBoard(); renderCharts(); renderLeaders(); renderPositions(); renderHealth(); renderVoids(); renderTape();
+  renderStatus(); renderTiles(); renderBoard(); renderSim(); renderCharts(); renderSides(); renderLeaders(); renderTenure(); renderPositions(); renderHealth(); renderVoids(); renderTape();
 }
-function renderFast() { renderTiles(); renderBoard(); }
+function renderFast() { renderTiles(); renderBoard(); renderSim(); }
 
 async function init() {
+  try { initTheme(); } catch { /* no DOM */ }
   verifier = await makeVerifier(REFEREE);
   st.verify.available = !!verifier;
   try {

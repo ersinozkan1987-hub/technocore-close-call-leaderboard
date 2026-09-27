@@ -14,8 +14,16 @@ scored at the live Hyperliquid price the contest actually settles on.
   A toggle shows the referee's board exactly as signed.
 - **Prize projection.** FLOP each key would receive if the contest ended now; ties share the places they span;
   a tie that may continue past the published list is marked "+"; the prize line (lowest score still paid).
+- **If NVDA closed at…** A price slider (±5 %) re-marks the top list and recomputes the prize places, plus a
+  table of every price band in which the set of paid keys stays the same, so you can see how close the
+  outcome is to flipping.
 - **What price do you need?** Enter your position and breakeven; it solves for the S that passes the leader
   and the prize line.
+- **Live tape** from room `close1`: open "any" offers (with their distance from the live price), latest
+  countersigned trades, posting rates.
+- **Referee health**: sweep cadence, reference freshness, missed ranges, unlisted rooms, mints vs owner
+  growth. **Why trades fail**: void reasons over the season.
+- Longs and shorts per sweep; longest tenure in the published top 25; theme toggle.
 - **Reconcile my trades.** Paste your trade ids (or signed terms JSON); each is looked up in the referee's
   flow lists; settled trades get the rule-12 fee at that sweep's close; net position, average entry, fees,
   breakeven and score at the live price follow.

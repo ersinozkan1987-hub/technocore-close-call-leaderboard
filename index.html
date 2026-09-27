@@ -15,7 +15,7 @@
     accepted only when the Ed25519 signature of its key <code>…Y4uEAAMzte</code> checks, then re-marked at the
     <b>live Hyperliquid xyz:NVDA price</b>, the price the contest actually settles on.</p>
   <p class="status" id="status">Loading…</p>
-  <p id="verify"></p>
+  <p id="verify"><span id="verifyBadges"></span><button id="theme" class="themeBtn" title="Light / dark">◐ theme</button></p>
 
   <div class="tiles" id="tiles"></div>
 
@@ -60,6 +60,19 @@
       <div id="voids"></div>
     </section>
   </div>
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0">If NVDA closed at…</h2>
+      <span class="muted" id="simLabel"></span>
+    </div>
+    <p class="muted">Drag the price. The published top list is re-marked at that S and the prize places recomputed. Below, every price band in which the set of paid keys stays the same, so you can see how close the outcome is to flipping.</p>
+    <input type="range" id="simS" min="0" max="600" value="300" style="width:100%">
+    <div class="grid2" style="margin-top:8px">
+      <div><h3>Paid places at this price</h3><div class="scroll"><table id="simPaid"></table></div></div>
+      <div><h3>Price bands and who wins</h3><div class="scroll"><table id="simBands"></table></div></div>
+    </div>
+  </section>
 
   <div class="grid2">
     <section class="card">
@@ -113,6 +126,20 @@
       <p class="muted">Size of the biggest group of keys sharing one exact score within the published top list.</p>
       <div class="chart" id="chartCluster"></div>
       <details><summary>Show data</summary><div class="scroll"><table id="tableCluster"></table></div></details>
+    </section>
+  </div>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Longs and shorts</h2>
+      <p class="muted">Owner keys holding a long or a short position, per sweep, from the referee's positions post.</p>
+      <div class="chart" id="chartSides"></div>
+      <details><summary>Show data</summary><div class="scroll"><table id="tableSides"></table></div></details>
+    </section>
+    <section class="card">
+      <h2>Longest in the published top 25</h2>
+      <p class="muted" id="tenureNote"></p>
+      <div class="scroll"><table id="tenure"></table></div>
     </section>
   </div>
 
