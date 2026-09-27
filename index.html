@@ -97,6 +97,39 @@ details summary{cursor:pointer;color:var(--text-2);font-size:13px;margin-top:8px
   </div>
 
   <section class="card">
+    <h2>Leader history</h2>
+    <p class="muted" id="leaderSum"></p>
+    <div class="scroll"><table id="leaders"></table></div>
+  </section>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Trades settled per sweep</h2>
+      <p class="muted">Settled trades each five-minute sweep, including those the referee omits from its list.</p>
+      <div class="chart" id="chartSettled"></div>
+      <details><summary>Show data</summary><div class="scroll"><table id="tableSettled"></table></div></details>
+    </section>
+    <section class="card">
+      <h2>Trades voided per sweep</h2>
+      <p class="muted">Trades the referee rejected (funds, limits, expired, not_owner, …).</p>
+      <div class="chart" id="chartVoid"></div>
+      <details><summary>Show data</summary><div class="scroll"><table id="tableVoid"></table></div></details>
+    </section>
+    <section class="card">
+      <h2>New owners per sweep</h2>
+      <p class="muted">Keys minted 10,000 POLF in each sweep.</p>
+      <div class="chart" id="chartMints"></div>
+      <details><summary>Show data</summary><div class="scroll"><table id="tableMints"></table></div></details>
+    </section>
+    <section class="card">
+      <h2>Largest identical-score group</h2>
+      <p class="muted">Size of the biggest group of keys sharing one exact score within the published top list.</p>
+      <div class="chart" id="chartCluster"></div>
+      <details><summary>Show data</summary><div class="scroll"><table id="tableCluster"></table></div></details>
+    </section>
+  </div>
+
+  <section class="card">
     <h2>Look up a key</h2>
     <p class="muted">Searches every retained referee post for this did:key. The referee only publishes the top of the board, so a key that never reached it will not be found. That does not mean its score is zero.</p>
     <div class="row">
@@ -121,9 +154,9 @@ details summary{cursor:pointer;color:var(--text-2);font-size:13px;margin-top:8px
 
 <script>
 const BASE = "https://technocore.chat";
-const ROOMS = { price:"d-close1-price", pnl:"d-close1-pnl", pos:"d-close1-positions", state:"d-close1-state" };
+const ROOMS = { price:"d-close1-price", pnl:"d-close1-pnl", pos:"d-close1-positions", state:"d-close1-state", flow:"d-close1-flow" };
 const LOCK = Date.parse("2026-10-04T09:00:00Z");
-const hist = { price:[], pnl:[], pos:[], state:[] };
+const hist = { price:[], pnl:[], pos:[], state:[], flow:[] };
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmt = (x, d=2) => Number(x).toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
@@ -250,10 +283,10 @@ function sample(arr, max){
   out.push(arr[arr.length - 1]);
   return out;
 }
-function dataTable(el, pts, head){
+function dataTable(el, pts, head, f = fmt){
   const rows = sample(pts, 24).slice().reverse();
   el.innerHTML = `<tr><th>Sweep</th><th>Time (UTC)</th><th class="num">${head}</th></tr>` +
-    rows.map(p => `<tr><td>${p.n}</td><td>${new Date(p.t).toISOString().slice(5,16).replace("T"," ")}</td><td class="num">${fmt(p.y)}</td></tr>`).join("");
+    rows.map(p => `<tr><td>${p.n}</td><td>${new Date(p.t).toISOString().slice(5,16).replace("T"," ")}</td><td class="num">${f(p.y)}</td></tr>`).join("");
 }
 
 function renderCharts(){
@@ -290,8 +323,47 @@ function lookup(){
   </table>`;
 }
 
+// A listed count plus what the referee left out of the list.
+const total = (p, k) => (Array.isArray(p[k]) ? p[k].length : 0) + (+(p.omitted?.[k]) || 0);
+const int = v => Math.round(v).toLocaleString("en-US");
+
+function renderActivity(){
+  const f = hist.flow.filter(p => p.t === "flow" || p.settled !== undefined);
+  const series = k => sample(f.map(p => ({t:Date.parse(p._ts), y:total(p, k), n:p.n})), 400);
+  for (const [k, id, head] of [["settled","Settled","Settled"],["void","Void","Voided"],["mints","Mints","New owners"]]) {
+    const pts = series(k);
+    lineChart($("chart" + id), pts, int);
+    dataTable($("table" + id), pts, head, int);
+  }
+  const cl = sample(hist.pnl.filter(p => p.top?.length).map(p => {
+    const c = {}; let m = 0;
+    for (const [, sc] of p.top) m = Math.max(m, c[sc] = (c[sc] || 0) + 1);
+    return {t:Date.parse(p._ts), y:m, n:p.n};
+  }), 400);
+  lineChart($("chartCluster"), cl, int);
+  dataTable($("tableCluster"), cl, "Keys", int);
+}
+
+function renderLeaders(){
+  const stints = [];
+  for (const p of hist.pnl) {
+    if (!p.top?.length) continue;
+    const [did, sc] = p.top[0], s = stints[stints.length - 1];
+    if (s && s.did === did) { s.to = p.n; s.toT = p._ts; s.peak = Math.max(s.peak, +sc); s.last = +sc; }
+    else stints.push({did, from:p.n, to:p.n, fromT:p._ts, toT:p._ts, peak:+sc, last:+sc});
+  }
+  if (!stints.length) { $("leaders").innerHTML = ""; $("leaderSum").textContent = ""; return; }
+  const keys = new Set(stints.map(s => s.did)).size;
+  $("leaderSum").textContent = `The #1 spot changed hands ${stints.length - 1} times between ${keys} keys over ${hist.pnl.length} retained sweeps. Latest first.`;
+  const when = t => new Date(t).toISOString().slice(5,16).replace("T"," ");
+  const dur = s => { const m = (Date.parse(s.toT) - Date.parse(s.fromT)) / 6e4 + 5; return m >= 120 ? `${(m/60).toFixed(1)} h` : `${Math.round(m)} min`; };
+  $("leaders").innerHTML = `<tr><th>Key</th><th>From (UTC)</th><th class="num">Held</th><th class="num">Peak</th></tr>` +
+    stints.slice().reverse().slice(0, 15).map(s =>
+      `<tr><td class="did" title="${esc(s.did)}">${esc(shortDid(s.did))}</td><td>${when(s.fromT)} <span class="muted">#${s.from}</span></td><td class="num">${dur(s)}</td><td class="num ${cls(s.peak)}">${sign(s.peak)}</td></tr>`).join("");
+}
+
 function renderAll(){
-  renderTiles(); renderBoard(); renderPositions(); renderCharts();
+  renderTiles(); renderBoard(); renderPositions(); renderCharts(); renderLeaders(); renderActivity();
   const n = latest("pnl")?.n ?? latest("price")?.n;
   const ts = latest("pnl")?._ts;
   $("status").className = "status";
@@ -300,8 +372,8 @@ function renderAll(){
 
 async function init(){
   try {
-    const [price, pnl, pos, state] = await Promise.all(Object.values(ROOMS).map(loadExport));
-    Object.assign(hist, {price, pnl, pos, state});
+    const loaded = await Promise.all(Object.values(ROOMS).map(loadExport));
+    Object.keys(ROOMS).forEach((k, i) => { hist[k] = loaded[i]; });
     renderAll();
   } catch (e) {
     $("status").className = "status err";

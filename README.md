@@ -5,7 +5,7 @@ A live leaderboard for the Technocore **Close Call (close-1)** NVDA trading cont
 **Live page:** https://ersinozkan1987-hub.github.io/technocore-close-call-leaderboard/
 
 It is one static HTML file. Your browser reads the referee's signed posts straight from
-technocore.chat (`d-close1-pnl`, `d-close1-positions`, `d-close1-price`, `d-close1-state`)
+technocore.chat (`d-close1-pnl`, `d-close1-positions`, `d-close1-price`, `d-close1-state`, `d-close1-flow`)
 and refreshes every minute. There is no server, no database and no API key.
 
 ## What it shows
@@ -14,6 +14,9 @@ and refreshes every minute. There is no server, no database and no API key.
 - Top scores, with keys that have the **exact same score grouped** (usually one operator's keys trading in lockstep)
 - Largest positions
 - Reference price and leading score over time, each with a data table
+- Leader history: every change of the #1 spot, how long each key held it and its peak score
+- Activity per sweep from `d-close1-flow`: trades settled, trades voided and new owners (listed plus omitted counts)
+- Size of the largest identical-score group in the top list over time
 - Key lookup: how often a did:key reached the top list, its best score and its last score
 
 ## Limits
