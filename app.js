@@ -472,11 +472,128 @@ function lookup() {
   </table>`;
 }
 
+/* ---------- live tape (room close1) ---------- */
+
+const tape = { msgs: [], lastSeq: 0, at: null, firstAt: null };
+
+async function loadTape() {
+  const r = await fetch(`${BASE}/r/close1?format=json&limit=200`);
+  if (!r.ok) return false;
+  const j = await r.json();
+  for (const m of j.messages || []) {
+    if (m.seq <= tape.lastSeq) continue;
+    tape.lastSeq = m.seq;
+    let t; try { t = JSON.parse(m.text); } catch { continue; }
+    if (t.season && t.season !== "close-1") continue;
+    if (t.t === "trade" && t.terms) tape.msgs.push({ kind: "trade", seq: m.seq, ts: m.ts, from: m.from, terms: t.terms, taker: t.taker });
+    else if (t.t === "offer" && t.terms) tape.msgs.push({ kind: "offer", seq: m.seq, ts: m.ts, from: m.from, terms: t.terms });
+    else if (t.t === "owner") tape.msgs.push({ kind: "owner", seq: m.seq, ts: m.ts, from: m.from });
+    else if (t.t === "room") tape.msgs.push({ kind: "room", seq: m.seq, ts: m.ts, from: m.from });
+  }
+  tape.firstAt ??= Date.now();
+  tape.at = Date.now();
+  const cutoff = Date.now() - 30 * 60e3;
+  tape.msgs = tape.msgs.filter((m) => Date.parse(m.ts) > cutoff);
+  return true;
+}
+
+function nextSweep() {
+  const s = st.season.sweeps.at(-1);
+  // the price post says which sweep it prices ("n") and its limits apply to the next one
+  return s ? s.n + 1 : null;
+}
+
+function renderTape() {
+  const now = Date.now();
+  const win = Math.min(10 * 60e3, tape.msgs.length ? now - Math.min(...tape.msgs.map((m) => Date.parse(m.ts))) : 10 * 60e3);
+  const recent = tape.msgs.filter((m) => now - Date.parse(m.ts) <= win);
+  const perMin = (k) => (recent.filter((m) => m.kind === k).length / Math.max(win / 60e3, 0.5));
+  const s = st.season.sweeps.at(-1);
+  const lo = s?.lo, hi = s?.hi, nxt = nextSweep();
+  const live = currentS().S;
+  // open offers: taker any, until ≥ next sweep, inside the band, not already countersigned in the tape
+  const taken = new Set(tape.msgs.filter((m) => m.kind === "trade").map((m) => m.terms.id));
+  const seenIds = new Set();
+  const offers = tape.msgs.filter((m) => m.kind === "offer" && m.terms.taker === "any" && !taken.has(m.terms.id))
+    .filter((m) => { if (seenIds.has(m.terms.id)) return false; seenIds.add(m.terms.id); return true; })
+    .filter((m) => nxt == null || +m.terms.until >= nxt)
+    .filter((m) => lo == null || (+m.terms.px >= lo && +m.terms.px <= hi))
+    .sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts)).slice(0, 25);
+  const span = tape.msgs.length ? (now - Math.min(...tape.msgs.map((m) => Date.parse(m.ts)))) / 1000 : 0;
+  $("tapeStatus").textContent = tape.at ? `${tape.msgs.length} posts covering the last ${span >= 120 ? Math.round(span / 60) + " min" : Math.round(span) + " s"} · read ${Math.round((now - tape.at) / 1000)} s ago` : "reading…";
+  $("tapeTiles").innerHTML = [
+    ["Trades posted / min", perMin("trade").toFixed(1), "countersigned, awaiting the sweep"],
+    ["Offers posted / min", perMin("offer").toFixed(1), "taker any or named"],
+    ["Registrations / min", perMin("owner").toFixed(1), "new owner keys"],
+    ["Open offers now", String(offers.length), `valid for sweep ${nxt ?? "?"}`],
+  ].map(([k, v, s]) => `<div class="tile"><div class="k">${k}</div><div class="v">${esc(v)}</div><div class="s">${esc(s)}</div></div>`).join("");
+  $("offers").innerHTML = offers.length
+    ? `<tr><th>Maker</th><th>Side</th><th class="num">Qty @ px</th><th class="num">vs live</th><th class="num">Until</th></tr>` +
+      offers.map((m) => {
+        const t = m.terms, d = live ? (t.px / live - 1) * 1e4 : null;
+        return `<tr><td class="did" title="${esc(t.maker)}">${esc(shortDid(t.maker))}</td><td>${esc(t.side)}s</td><td class="num">${fmt(t.qty)} @ ${fmt(t.px)}</td><td class="num ${d == null ? "" : (t.side === "sell" ? (d < 0 ? "pos" : "neg") : (d > 0 ? "pos" : "neg"))}">${d == null ? "–" : sign(d, 0) + " bp"}</td><td class="num">sweep ${esc(t.until)}</td></tr>`;
+      }).join("")
+    : `<tr><td class="muted">No open "any" offers in the last 30 minutes of the room.</td></tr>`;
+  const trades = tape.msgs.filter((m) => m.kind === "trade").sort((a, b) => b.seq - a.seq).slice(0, 15);
+  $("trades").innerHTML = trades.length
+    ? `<tr><th>Time</th><th>Maker → taker</th><th>Maker side</th><th class="num">Qty @ px</th></tr>` +
+      trades.map((m) => `<tr><td>${new Date(m.ts).toISOString().slice(11, 19)}</td><td class="did">${esc(shortDid(m.terms.maker))} → ${esc(shortDid(m.taker || "?"))}</td><td>${esc(m.terms.side)}</td><td class="num">${fmt(m.terms.qty)} @ ${fmt(m.terms.px)}</td></tr>`).join("")
+    : `<tr><td class="muted">No trades posted in the last 30 minutes.</td></tr>`;
+}
+
+/* ---------- referee health + void reasons ---------- */
+
+function renderHealth() {
+  const sw = st.season.sweeps.filter((s) => s.ts);
+  const last = sw.at(-1);
+  if (!last) { $("health").innerHTML = ""; return; }
+  const now = Date.now();
+  const dayAgo = now - 24 * 3600e3;
+  const day = sw.filter((s) => Date.parse(s.ts) > dayAgo);
+  const sinceLast = (now - Date.parse(last.ts)) / 1000;
+  const expectedGap = 300;
+  const lateBy = sinceLast - expectedGap;
+  const staleRef = day.filter((s) => s.age != null && s.age > 300);
+  const missed = day.reduce((a, s) => a + (s.missed || 0), 0);
+  const unlisted = day.reduce((a, s) => a + (s.unlisted || 0), 0);
+  // mints listed+omitted should equal the growth in owners between consecutive state posts
+  let mintGap = 0, mintChecked = 0;
+  for (let i = 1; i < day.length; i++) {
+    const a = day[i - 1], b = day[i];
+    if (a.owners == null || b.owners == null || b.mints == null) continue;
+    mintChecked++;
+    if (b.owners - a.owners !== b.mints) mintGap++;
+  }
+  const gaps = [];
+  for (let i = 1; i < day.length; i++) { const d = (Date.parse(day[i].ts) - Date.parse(day[i - 1].ts)) / 1000; if (d > 420) gaps.push({ n: day[i].n, d }); }
+  const badge = (ok, warn, txt) => `<span class="badge ${ok ? "ok" : warn ? "warn" : "bad"}">${txt}</span>`;
+  const rows = [
+    [badge(lateBy < 60, lateBy < 600, lateBy < 60 ? "on time" : `late ${Math.round(lateBy / 60)} min`), "Last sweep", `#${last.n} at ${when(last.ts)}; sweeps are due every 5 minutes`],
+    [badge(last.age == null || last.age <= 300, last.age <= 3600, last.age == null ? "?" : last.age <= 300 ? "fresh" : `${Math.round(last.age / 60)} min old`), "Hyperliquid reference", `${staleRef.length} of ${day.length} sweeps in 24 h used a reference older than 5 min (rule 11: the last one stands)`],
+    [badge(gaps.length === 0, gaps.length < 5, gaps.length ? `${gaps.length} gaps` : "none"), "Sweep gaps > 7 min (24 h)", gaps.length ? gaps.slice(-5).map((g) => `#${g.n} +${Math.round(g.d / 60)} min`).join(", ") : "every sweep landed in time"],
+    [badge(missed === 0, missed < 10, String(missed)), "Missed ranges (24 h)", "room ranges the referee reported it could not read"],
+    [badge(unlisted === 0, true, String(unlisted)), "Rooms unlisted (24 h)", "registered rooms dropped from the list (undocumented, see issue #11)"],
+    [badge(mintGap === 0, mintGap < 3, mintChecked ? `${mintChecked - mintGap}/${mintChecked}` : "?"), "Mints vs owner growth (24 h)", "sweeps where listed + omitted mints equal the change in owners"],
+  ];
+  $("health").innerHTML = `<table>${rows.map(([b, k, v]) => `<tr><td style="white-space:nowrap">${b}</td><td><b>${k}</b><br><span class="muted">${esc(v)}</span></td></tr>`).join("")}</table>`;
+}
+
+const VOID_REASONS = { funds: "funds: free POLF does not cover the contracts opened plus fee", limits: "limits: price outside ±5 % of the reference", expired: "expired: sweep later than until", settled: "settled: id already settled once", not_owner: "not_owner: a side is not a registered owner", taker: "taker: named taker did not countersign", shape: "shape: malformed terms", locked: "locked: after the lock" };
+
+function renderVoids() {
+  const sw = st.season.sweeps;
+  const tot = {}; let listed = 0, all = 0;
+  for (const s of sw) { all += s.void || 0; for (const [r, c] of Object.entries(s.vr || {})) { tot[r] = (tot[r] || 0) + c; listed += c; } }
+  const entries = Object.entries(tot).sort((a, b) => b[1] - a[1]);
+  $("voidNote").textContent = `Reasons are published for ${int(listed)} of ${int(all)} voided trades this season; the referee trims its lists on busy sweeps, so shares describe that sample.`;
+  $("voids").innerHTML = entries.length ? `<table>${entries.map(([r, c]) => { const pct = c / listed * 100; return `<tr><td>${esc(VOID_REASONS[r] || r)}</td><td class="num" style="white-space:nowrap">${pct.toFixed(1)} % · ${int(c)}</td><td style="width:30%"><div style="height:8px;border-radius:4px;background:var(--s2);width:${pct.toFixed(1)}%"></div></td></tr>`; }).join("")}</table>` : `<p class="muted">No voided trade listed yet.</p>`;
+}
+
 /* ---------- orchestration ---------- */
 
 function renderAll() {
   recompute();
-  renderStatus(); renderTiles(); renderBoard(); renderCharts(); renderLeaders(); renderPositions();
+  renderStatus(); renderTiles(); renderBoard(); renderCharts(); renderLeaders(); renderPositions(); renderHealth(); renderVoids(); renderTape();
 }
 function renderFast() { renderTiles(); renderBoard(); }
 
@@ -501,10 +618,12 @@ async function init() {
       return;
     }
   }
-  await Promise.all([tail().catch(() => 0), hlPrice()]);
+  await Promise.all([tail().catch(() => 0), hlPrice(), loadTape().catch(() => false)]);
   renderAll();
   setInterval(async () => { try { if (await tail()) renderAll(); else renderStatus(); } catch { /* next minute */ } }, 60_000);
   setInterval(async () => { if (await hlPrice()) renderFast(); }, 5_000);
+  // the room's text view caps at 200 posts (≈10–30 s at contest volume), so read often and accumulate
+  setInterval(async () => { try { if (await loadTape()) renderTape(); } catch { /* next time */ } }, 15_000);
 }
 
 $("viewLive").addEventListener("click", () => { st.view = "live"; $("viewLive").className = "on"; $("viewBoard").className = ""; renderFast(); });

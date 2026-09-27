@@ -77,3 +77,16 @@ expect(/On the board now #/.test(text("didOut")), "lookup finds the leader");
 console.log(`done in ${Date.now() - t0} ms · sweeps ${app.st.season.sweeps.length} · source ${app.st.source} · live verified ${app.st.verify.live.ok} bad ${app.st.verify.live.bad}`);
 if (fail.length) { console.error("FAILED:", fail.join("; ")); process.exit(1); }
 console.log("all checks passed");
+
+// Phase 2 sections
+console.log("tape     :", text("tapeStatus"), "|", text("tapeTiles").slice(0, 200));
+console.log("offers   :", text("offers").slice(0, 300));
+console.log("trades   :", text("trades").slice(0, 200));
+console.log("health   :", text("health").slice(0, 400));
+console.log("voids    :", text("voidNote").slice(0, 120), "|", text("voids").slice(0, 200));
+const f2 = [];
+if (!/posts covering the last/.test(text("tapeStatus"))) f2.push("tape read");
+if (!/Last sweep/.test(text("health"))) f2.push("health rendered");
+if (!/funds/.test(text("voids"))) f2.push("void reasons rendered");
+if (f2.length) { console.error("FAILED phase 2:", f2.join("; ")); process.exit(1); }
+console.log("phase 2 checks passed");
