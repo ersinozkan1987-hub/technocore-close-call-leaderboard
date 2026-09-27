@@ -681,6 +681,42 @@ function initTheme() {
   });
 }
 
+/* ---------- identical-score groups across sweeps ---------- */
+
+function renderClusters() {
+  const keys = st.season.keys;
+  const scored = st.season.sweeps.filter((s) => s.top?.length);
+  const clusters = [];
+  for (const s of scored) {
+    for (const g of groupTies(s.top)) {
+      if (g.keys.length < 2) continue;
+      const set = new Set(g.keys);
+      let best = null, bestJ = 0;
+      for (const c of clusters) {
+        const inter = [...set].filter((k) => c.members.has(k)).length;
+        const j = inter / (set.size + c.members.size - inter);
+        if (j > bestJ) { bestJ = j; best = c; }
+      }
+      if (best && bestJ >= 0.5) {
+        best.last = s.n; best.sweeps++; best.maxSize = Math.max(best.maxSize, set.size); best.size = set.size; best.score = g.score;
+        for (const k of set) best.members.add(k);
+      } else clusters.push({ members: new Set(set), first: s.n, last: s.n, sweeps: 1, maxSize: set.size, size: set.size, score: g.score });
+    }
+  }
+  const lastN = scored.at(-1)?.n;
+  clusters.sort((a, b) => b.sweeps - a.sweeps);
+  const rows = clusters.slice(0, 12);
+  $("clusterNote").textContent = `${clusters.length} groups seen over ${scored.length} sweeps; ${clusters.filter((c) => c.last === lastN).length} present in the latest sweep. Keys that share one exact published score in the same sweep, followed across sweeps (a group persists while at least half of its keys stay together). The rules allow any number of keys per operator, so a group is an observation, not a violation.`;
+  $("clusters").innerHTML = `<tr><th>Group</th><th class="num">Keys now / ever</th><th class="num">Sweeps together</th><th class="num">Seen</th><th class="num">Position</th><th class="num">Last score</th></tr>` +
+    rows.map((c) => {
+      const ids = [...c.members];
+      const pos = ids.map((k) => st.positions.get(keys[k])).filter((p) => p && p.q != null).map((p) => p.q);
+      const posTxt = pos.length ? `${pos.length === ids.length ? "" : "≈"}${sign(Math.min(...pos))}${Math.max(...pos) - Math.min(...pos) > 0.5 ? ` … ${sign(Math.max(...pos))}` : ""}` : "?";
+      const now = c.last === lastN;
+      return `<tr${now ? "" : ' class="muted"'}><td class="did" title="${esc(ids.slice(0, 5).map((k) => keys[k]).join("\n"))}">${esc(shortDid(keys[ids[0]]))} +${ids.length - 1}</td><td class="num">${now ? c.size : 0} / ${ids.length}</td><td class="num">${c.sweeps}</td><td class="num muted">${c.first}–${c.last}</td><td class="num">${posTxt}</td><td class="num ${cls(c.score)}">${sign(c.score)}</td></tr>`;
+    }).join("");
+}
+
 /* ---------- season-long consistency checks ---------- */
 
 let consistencyFindings = null;
@@ -734,7 +770,7 @@ $("consDl").addEventListener("click", () => {
 
 function renderAll() {
   recompute();
-  renderStatus(); renderTiles(); renderBoard(); renderSim(); renderCharts(); renderSides(); renderLeaders(); renderTenure(); renderPositions(); renderHealth(); renderConsistency(); renderVoids(); renderTape();
+  renderStatus(); renderTiles(); renderBoard(); renderSim(); renderCharts(); renderSides(); renderLeaders(); renderTenure(); renderClusters(); renderPositions(); renderHealth(); renderConsistency(); renderVoids(); renderTape();
 }
 function renderFast() { renderTiles(); renderBoard(); renderSim(); }
 

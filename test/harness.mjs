@@ -106,3 +106,6 @@ console.log("phase 3 checks passed");
 console.log("consist  :", text("consNote"), "|", text("consistency").slice(0, 300));
 if (!/findings over sweeps/.test(text("consNote"))) { console.error("FAILED: consistency"); process.exit(1); }
 console.log("phase 4 checks passed");
+console.log("clusters :", text("clusterNote").slice(0, 80), "|", text("clusters").slice(0, 260));
+if (!/groups seen/.test(text("clusterNote")) || !/Sweeps together/.test(text("clusters"))) { console.error("FAILED: clusters"); process.exit(1); }
+console.log("phase 5 checks passed");
