@@ -1,5 +1,5 @@
 import { makeVerifier, checkRecord, nonceDigits } from "./verify.js";
-import { REFEREE, ROOMS, newSeason, applyPosts, expand, lastScored } from "./lib/season.js";
+import { REFEREE, ROOMS, newSeason, applyPosts, collectIds, expand, lastScored } from "./lib/season.js";
 import { estimatePositions, settleAt, prizes, priceToPass, groupTies, fees, LOCK, LOCK_SWEEP, MINT } from "./lib/score.js";
 
 const BASE = "https://technocore.chat";
@@ -231,8 +231,19 @@ async function loadIds() {
   if (st.ids) return st.ids;
   $("recStatus").textContent = "loading the referee's trade lists…";
   const r = await fetch("data/ids.json", { cache: "no-store" });
-  if (!r.ok) throw new Error("ids.json " + r.status);
-  st.ids = await r.json();
+  if (r.ok) { st.ids = await r.json(); return st.ids; }
+  // No build output: read the flow room's export here and verify it.
+  const e = await fetch(`${BASE}/r/d-close1-flow/export`);
+  if (!e.ok) throw new Error("flow export " + e.status);
+  const posts = [];
+  for (const line of (await e.text()).split("\n")) {
+    if (!line.trim()) continue;
+    let obj; try { obj = JSON.parse(line); } catch { continue; }
+    const c = await checkRecord(verifier, REFEREE, "d-close1-flow", line, obj);
+    if (!c.ok) continue;
+    try { posts.push(JSON.parse(obj.text)); } catch { /* skip */ }
+  }
+  st.ids = { generated: new Date().toISOString(), ...collectIds(posts) };
   return st.ids;
 }
 
