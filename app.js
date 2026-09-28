@@ -11,7 +11,7 @@ const st = {
   season: null, source: "", buildAt: null,
   verify: { build: null, live: { ok: 0, bad: 0 }, available: true },
   live: { px: null, at: null, err: 0 },
-  view: "live", ids: null, positions: new Map(), rows: [], scored: null,
+  view: "live", ids: null, positions: new Map(), rows: [], scored: null, exact: null, shards: new Map(),
 };
 let verifier = null;
 
@@ -106,6 +106,11 @@ function recompute() {
   const sweeps = st.season.sweeps.filter((s) => s.n <= s0.n).map((s) => expand(st.season, s));
   st.scored = sweeps[sweeps.length - 1];
   st.positions = estimatePositions(sweeps);
+  // keys whose replayed ledger matches the referee's signed score: exact position from the per-sweep records
+  for (const [k, , b] of st.exact?.check?.scores?.matched || []) {
+    const p = st.positions.get(k);
+    if (!p || p.how !== "listed") st.positions.set(k, { q: Number(b), how: "ledger" });
+  }
 }
 
 function currentS() {
@@ -171,7 +176,7 @@ function renderBoard() {
   const { S, src } = currentS();
   const pub = new Map(prizes(s.top.map(([key, score]) => ({ key, score })), "score").map((r) => [r.key, r.rank]));
   $("boardNote").textContent = st.view === "live"
-    ? `Published scores re-marked at ${fmt(S)} (${src}), global mark ${fmt(s.global)}. Position: listed by the referee, or fitted from the key's score history (≈), or unknown (?) — unknown keys keep their published score.`
+    ? `Published scores re-marked at ${fmt(S)} (${src}), global mark ${fmt(s.global)}. Position: listed by the referee, exact from the per-sweep records (R), fitted from the key's score history (≈), or unknown (?) — unknown keys keep their published score.`
     : `The referee's top ${s.top.length} exactly as signed at sweep ${s.n}, marked at the global price ${fmt(s.global)}.`;
   // group consecutive equal scores
   const groups = [];
@@ -190,7 +195,7 @@ function renderBoard() {
       const mv = st.view === "live" && d ? `<span class="mv ${d > 0 ? "up" : "down"}">${d > 0 ? "▲" : "▼"}${Math.abs(d)}</span>` : "";
       return `<div class="did" title="${esc(r.key)}">${esc(shortDid(r.key))} ${mv}</div>`;
     }).join("") + (more ? `<div class="muted">+${more} more</div>` : "");
-    const posTxt = (r) => r.position == null ? `<span class="muted">?</span>` : `${r.how === "fitted" ? "≈" : ""}${sign(r.position)}`;
+    const posTxt = (r) => r.position == null ? `<span class="muted">?</span>` : `${r.how === "fitted" ? "≈" : ""}${sign(r.position)}${r.how === "ledger" ? `<sup title="exact, from the per-sweep records">R</sup>` : ""}`;
     const posCol = g.rows.length === 1 ? posTxt(first) : [...new Set(g.rows.map(posTxt))].join(" / ");
     const pubCol = g.rows.length === 1 ? sign(first.score) : [...new Set(g.rows.map((r) => sign(r.score)))].join(" / ");
     html += `<tr><td>${rank}${open}</td><td>${keys}</td><td class="num ${cls(first.score)}">${pubCol}</td><td class="num">${posCol}</td><td class="num ${cls(g.settle)}"><b>${sign(g.settle)}</b>${g.rows.length > 1 ? `<span class="chip">${g.rows.length} keys</span>` : ""}</td><td class="num">${first.prize ? flop(first.prize) + (g.rows.length > 1 ? " each" : "") : "–"}</td></tr>`;
@@ -523,6 +528,52 @@ function lookup() {
   </table>`;
 }
 
+async function ledgerRow(did) {
+  const c = did.slice(12, 13);
+  if (!st.shards.has(c)) {
+    const r = await fetch(`data/ledger/${c}.json`, { cache: "no-store" });
+    st.shards.set(c, r.ok ? await r.json() : {});
+  }
+  return st.shards.get(c)[did] || null;
+}
+
+async function lookupLedger(did) {
+  const box = $("didLedger");
+  if (!st.exact) { box.innerHTML = ""; return; }
+  const row = await ledgerRow(did).catch(() => null);
+  const x = st.exact, n = x.sweep;
+  if (!row) { box.innerHTML = `<p class="muted">No settled public trade for this key up to sweep ${n} in the per-sweep records. Private-room trades are redacted there.</p>`; return; }
+  const [a, b, cash, fee, t] = row;
+  const { S } = currentS();
+  const at = Number(a) + Number(b) * S;
+  const differs = (x.check.scores.differ || []).find(([k]) => k === did);
+  const matches = (x.check.scores.matched || []).some(([k]) => k === did);
+  box.innerHTML = `<h3 style="margin:14px 0 6px">Exact ledger, sweep ${n}</h3><table class="kv">
+    <tr><td>Position</td><td class="num ${cls(Number(b))}">${sign(Number(b))}</td></tr>
+    <tr><td>Cash (POLF)</td><td class="num">${fmt(Number(cash))}</td></tr>
+    <tr><td>Fees paid</td><td class="num">${fmt(Number(fee))}</td></tr>
+    <tr><td>Settled public trades</td><td class="num">${t}</td></tr>
+    <tr><td>Score at ${fmt(S)}</td><td class="num ${cls(at)}"><b>${sign(at)}</b></td></tr>
+  </table><p class="muted" style="margin-top:6px">Replayed from the organisers' per-sweep records with the rules' own arithmetic. Score at S = ${esc(a)} + ${esc(b)} × S.
+  ${matches ? "Matches the referee's signed score at this sweep." : differs ? `<span class="neg">Differs from the referee's signed score (${sign(differs[1])} vs ${sign(differs[2])}): this key also traded in a private room, which the records redact.</span>` : "If this key also traded in a private room, those trades are redacted and not included."}</p>`;
+}
+
+function renderRecords() {
+  const x = st.exact, out = $("records");
+  if (!out) return;
+  if (!x) { out.innerHTML = `<p class="muted">Per-sweep records not loaded.</p>`; return; }
+  const c = x.check, tr = x.trades;
+  out.innerHTML = `<table class="kv">
+    <tr><td>Records replayed</td><td class="num">sweeps 1–${x.sweep} <span class="muted">(${x.latest_indexed} indexed)</span></td></tr>
+    <tr><td>Record hashes vs the referee's signed <code>file</code></td><td class="num ${x.unsigned_records ? "" : "pos"}">${x.unsigned_records ? `${x.unsigned_records} without a signed post yet` : "all match"}</td></tr>
+    <tr><td>Public trades settled / void</td><td class="num">${tr.settled_public.toLocaleString("en-US")} / ${tr.void_public.toLocaleString("en-US")}</td></tr>
+    <tr><td>Redacted (private rooms, outcome hidden)</td><td class="num">${tr.redacted.toLocaleString("en-US")}</td></tr>
+    <tr><td>Fees recomputed by rule 12 that differ</td><td class="num ${tr.fee_mismatch ? "neg" : "pos"}">${tr.fee_mismatch}</td></tr>
+    <tr><td>Accounts with a public trade</td><td class="num">${x.accounts_traded.toLocaleString("en-US")}</td></tr>
+    <tr><td>Referee top list matched (sweep ${c.sweep})</td><td class="num">${c.scores.match} of ${c.scores.match + (c.scores.differN || 0)} scores, ${c.positions.match} of ${c.positions.match + (c.positions.differN || 0)} positions</td></tr>
+  </table><p class="muted" style="margin-top:6px">A listed key that does not match traded in a private room: its trades are redacted in the records, so only the referee knows its balance.</p>`;
+}
+
 /* ---------- live tape (room close1) ---------- */
 
 const tape = { msgs: [], lastSeq: 0, at: null, firstAt: null };
@@ -769,7 +820,7 @@ $("consDl").addEventListener("click", () => {
 
 function renderAll() {
   recompute();
-  renderStatus(); renderTiles(); renderBoard(); renderSim(); renderCharts(); renderSides(); renderLeaders(); renderTenure(); renderClusters(); renderPositions(); renderHealth(); renderConsistency(); renderVoids(); renderTape();
+  renderStatus(); renderTiles(); renderBoard(); renderSim(); renderCharts(); renderSides(); renderLeaders(); renderTenure(); renderClusters(); renderPositions(); renderHealth(); renderRecords(); renderConsistency(); renderVoids(); renderTape();
 }
 function renderFast() { renderTiles(); renderBoard(); renderSim(); }
 
@@ -796,7 +847,8 @@ async function init() {
       return;
     }
   }
-  await Promise.all([tail().catch(() => 0), hlPrice(), loadTape().catch(() => false)]);
+  const loadExact = async () => { const r = await fetch("data/exact.json", { cache: "no-store" }); if (r.ok) st.exact = await r.json(); };
+  await Promise.all([tail().catch(() => 0), hlPrice(), loadTape().catch(() => false), loadExact().catch(() => null)]);
   renderAll();
   setInterval(async () => { try { if (await tail()) renderAll(); else renderStatus(); } catch { /* next minute */ } }, 60_000);
   setInterval(async () => { if (await hlPrice()) renderFast(); }, 5_000);
@@ -808,8 +860,9 @@ $("viewLive").addEventListener("click", () => { st.view = "live"; $("viewLive").
 $("viewBoard").addEventListener("click", () => { st.view = "board"; $("viewBoard").className = "on"; $("viewLive").className = ""; renderFast(); });
 $("solBtn").addEventListener("click", solve);
 $("recBtn").addEventListener("click", () => reconcile().catch((e) => { $("recOut").innerHTML = `<p class="neg">${esc(e.message)}</p>`; }));
-$("didBtn").addEventListener("click", lookup);
-$("didIn").addEventListener("keydown", (e) => { if (e.key === "Enter") lookup(); });
+const lookupAll = () => { lookup(); const d = $("didIn").value.trim(); if (/^did:key:z/.test(d)) lookupLedger(d).catch(() => {}); };
+$("didBtn").addEventListener("click", lookupAll);
+$("didIn").addEventListener("keydown", (e) => { if (e.key === "Enter") lookupAll(); });
 
 export { init, st, solve, reconcile, lookup, standings };
 if (!globalThis.__NO_AUTO_INIT) init();

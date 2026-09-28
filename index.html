@@ -55,6 +55,11 @@
       <div id="health"></div>
     </section>
     <section class="card">
+      <h2>Per-sweep records</h2>
+      <p class="muted">The organisers publish each sweep's full record (fold input and output) at <a href="https://challenges.technocore.chat/close-1/">challenges.technocore.chat/close-1</a>. The build checks every record against the hash the referee signed, recomputes every public trade's fee, and replays the balances.</p>
+      <div id="records"></div>
+    </section>
+    <section class="card">
       <h2>Referee consistency, whole season</h2>
       <p class="muted">Mechanical checks of the referee's own numbers, sweep by sweep: sweep numbers without a gap, five-minute cadence, mints equal to the growth in owners, a fresh reference, no missed ranges, no rooms dropped. Evidence for <a href="https://github.com/flop-labs/technocore-close-call-challenge/issues" rel="noopener">the issues</a>, not an accusation: a failed check is a question for FLOP Labs.</p>
       <div id="consistency"></div>
@@ -175,6 +180,7 @@
       <button id="didBtn">Look up</button>
     </div>
     <div id="didOut" style="margin-top:12px"></div>
+    <div id="didLedger"></div>
   </section>
 
   <section class="card note">

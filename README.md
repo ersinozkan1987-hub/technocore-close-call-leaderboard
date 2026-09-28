@@ -48,6 +48,22 @@ value is never rounded. `verify.js` runs in browsers (WebCrypto) and in Node.
   and the last Hyperliquid trade every 5 seconds. If the season file is missing or older than two hours it reads
   the exports directly and verifies them itself.
 
+## Exact ledger from the per-sweep records
+
+The organisers publish each sweep's full record, the fold's input and output, at
+[challenges.technocore.chat/close-1](https://challenges.technocore.chat/close-1/) (announced on issue #12).
+`build/ledger.mjs` fetches every record, checks its hash against the `file` the referee signed in its posts
+(redacted records against the index's sha256), recomputes every public trade's rule-12 fee against the referee's
+figure, and replays the settled trades with the rules' own arithmetic (`close_call_fold.py`), in integers so ties
+stay exact. Output: `data/exact.json` (summary, the check against the referee's signed top list, and every key that
+can reach the top 30 within ±10 % of the reference) and `data/ledger/<c>.json`, one shard per character after
+`did:key:z6Mk`, rows `[a, b, cash, fees, trades]` with score at S = a + b·S.
+
+Private-room trades are redacted in both input and output, so a key that also traded in a private room is off by
+those trades. The page says so for each key: a listed key whose replayed score matches the referee's is exact
+(position marked R on the board), one that differs traded privately. State between builds is kept in the Actions
+cache; a cold start replays every record (about 1.5 GB).
+
 ## board.json
 
 ```json
