@@ -2,7 +2,7 @@ import { makeVerifier, checkRecord, nonceDigits } from "./verify.js";
 import { newSeason, applyPosts, collectIds, expand, lastScored } from "./lib/season.js";
 import { contest, configure, refereeRooms, lockMs } from "./lib/contest.js";
 import { lastTrade } from "./lib/hl.js";
-import { estimatePositions, settleAt, prizes, priceToPass, groupTies, fees } from "./lib/score.js";
+import { estimatePositions, settleAt, prizes, priceToPass, groupTies, fees, applyLedger } from "./lib/score.js";
 
 let BASE = contest.chat, REFEREE = contest.referee, ROOMS = refereeRooms();
 const SEASON_MAX_AGE = 2 * 3600e3;
@@ -106,11 +106,7 @@ function recompute() {
   const sweeps = st.season.sweeps.filter((s) => s.n <= s0.n).map((s) => expand(st.season, s));
   st.scored = sweeps[sweeps.length - 1];
   st.positions = estimatePositions(sweeps);
-  // keys whose replayed ledger matches the referee's signed score: exact position from the per-sweep records
-  for (const [k, , b] of st.exact?.check?.scores?.matched || []) {
-    const p = st.positions.get(k);
-    if (!p || p.how !== "listed") st.positions.set(k, { q: Number(b), how: "ledger" });
-  }
+  applyLedger(st.positions, st.scored, st.exact);
 }
 
 function currentS() {
