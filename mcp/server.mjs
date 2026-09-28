@@ -8,6 +8,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { contest, configure } from "../lib/contest.js";
+import { lastTrade } from "../lib/hl.js";
 import { fees, priceToPass, prizes, settleAt, estimatePositions } from "../lib/score.js";
 import { expand, lastScored } from "../lib/season.js";
 
@@ -32,16 +33,13 @@ const board = () => cached("board", 60e3, () => getJson(`${PAGE}data/board.json`
 const season = () => cached("season", 300e3, () => getJson(`${PAGE}data/season.json`));
 const ids = () => cached("ids", 300e3, () => getJson(`${PAGE}data/ids.json`));
 async function livePrice() {
-  const j = await getJson("https://api.hyperliquid.xyz/info", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "allMids", dex: contest.hyperliquid_dex }) });
-  const px = Number(j[contest.market]);
-  if (!(px > 0)) throw new Error("no live price");
-  return px;
+  return (await lastTrade({ signal: AbortSignal.timeout(15_000) })).px;
 }
 
 const TOOLS = [
   { name: "contest", description: "Contest configuration: rooms, referee key, lock time, mint, fee, prize pool.", inputSchema: { type: "object", properties: {} } },
   { name: "board", description: "Latest published board re-marked at the referee's Hyperliquid reference: standings, positions, prize line, ties, verification counts.", inputSchema: { type: "object", properties: {} } },
-  { name: "standings_at_price", description: "Re-mark the published top list at a given final price S (default: live Hyperliquid mid) and return prize places.", inputSchema: { type: "object", properties: { S: { type: "number", description: "final price; omitted = live Hyperliquid mid" } } } },
+  { name: "standings_at_price", description: "Re-mark the published top list at a given final price S (default: last Hyperliquid trade) and return prize places.", inputSchema: { type: "object", properties: { S: { type: "number", description: "final price; omitted = live Hyperliquid mid" } } } },
   { name: "key", description: "History of one did:key in the published lists: scores, ranks, positions, best, last.", inputSchema: { type: "object", properties: { did: { type: "string" } }, required: ["did"] } },
   { name: "open_offers", description: "Offers in the trading room with taker 'any' that are still valid for the next sweep and inside its price limits.", inputSchema: { type: "object", properties: {} } },
   { name: "price_to_pass", description: "Final price at which a net position q with breakeven b passes the current leader and the prize line.", inputSchema: { type: "object", properties: { q: { type: "number", description: "net contracts, negative for short" }, b: { type: "number", description: "breakeven price" } }, required: ["q", "b"] } },

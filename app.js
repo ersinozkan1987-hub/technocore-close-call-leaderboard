@@ -1,10 +1,10 @@
 import { makeVerifier, checkRecord, nonceDigits } from "./verify.js";
 import { newSeason, applyPosts, collectIds, expand, lastScored } from "./lib/season.js";
 import { contest, configure, refereeRooms, lockMs } from "./lib/contest.js";
+import { lastTrade } from "./lib/hl.js";
 import { estimatePositions, settleAt, prizes, priceToPass, groupTies, fees } from "./lib/score.js";
 
 let BASE = contest.chat, REFEREE = contest.referee, ROOMS = refereeRooms();
-const HL = "https://api.hyperliquid.xyz/info";
 const SEASON_MAX_AGE = 2 * 3600e3;
 
 const st = {
@@ -91,10 +91,8 @@ async function tail() {
 
 async function hlPrice() {
   try {
-    const r = await fetch(HL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "allMids", dex: contest.hyperliquid_dex }) });
-    const j = await r.json();
-    const px = Number(j[contest.market]);
-    if (px > 0) { st.live = { px, at: Date.now(), err: 0 }; return true; }
+    const { px, time } = await lastTrade();
+    st.live = { px, at: Date.now(), trade: time, err: 0 }; return true;
   } catch { /* fall through */ }
   st.live.err++;
   return false;
@@ -111,7 +109,7 @@ function recompute() {
 }
 
 function currentS() {
-  if (st.live.px && Date.now() - st.live.at < 120e3) return { S: st.live.px, src: "live Hyperliquid mid" };
+  if (st.live.px && Date.now() - st.live.at < 120e3) return { S: st.live.px, src: "last Hyperliquid trade" };
   if (st.scored?.ref) return { S: st.scored.ref, src: "referee reference (live price unavailable)" };
   return { S: st.scored?.global, src: "global mark" };
 }

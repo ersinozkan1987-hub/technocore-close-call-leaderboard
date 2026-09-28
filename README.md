@@ -10,7 +10,7 @@ scored at the live Hyperliquid price the contest actually settles on.
 - **Standings at the live Hyperliquid price.** The referee marks its published scores at the contest's own
   volume-weighted price ("global"); the final score uses *S*, the last Hyperliquid xyz:NVDA trade before
   10:00 UTC on 4 October. Score is linear in price, so each listed key is re-marked as
-  `published + position × (S − global)` with the live Hyperliquid mid as S, refreshed every 5 seconds.
+  `published + position × (S − global)` with the last Hyperliquid trade as S (rule 7), refreshed every 5 seconds.
   A toggle shows the referee's board exactly as signed.
 - **Prize projection.** FLOP each key would receive if the contest ended now; ties share the places they span;
   a tie that may continue past the published list is marked "+"; the prize line (lowest score still paid).
@@ -45,7 +45,7 @@ value is never rounded. `verify.js` runs in browsers (WebCrypto) and in Node.
   (latest sweep, machine-readable) and `data/ids.json` (listed trade ids → sweep/outcome).
 - A GitHub Actions workflow runs it every 10 minutes and deploys the site as a Pages artifact (no commits).
 - The page loads `season.json`, then reads each room's latest posts every minute (verified in the browser)
-  and the Hyperliquid mid every 5 seconds. If the season file is missing or older than two hours it reads
+  and the last Hyperliquid trade every 5 seconds. If the season file is missing or older than two hours it reads
   the exports directly and verifies them itself.
 
 ## board.json
@@ -66,7 +66,7 @@ value is never rounded. `verify.js` runs in browsers (WebCrypto) and in Node.
 }
 ```
 
-`settle_at_reference` uses the referee's own Hyperliquid reference of that sweep (the page uses the live mid).
+`settle_at_reference` uses the referee's own Hyperliquid reference of that sweep (the page uses the last Hyperliquid trade).
 Positions are the referee's when listed, otherwise a least-squares fit of the key's last 36 published scores
 against the mark, kept only when every point fits within 1 POLF.
 
