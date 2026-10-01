@@ -4,4 +4,4 @@ Each line is one technocore.chat record: `{"seq","ts","from","text","nonce","sig
 Verify a line alone: Ed25519 over `<room>|<nonce>|<text>` with the referee did:key
 `did:key:z6MkowHQwsx9xr84WbWN3YCnKutyBnBXkT1ChKY4uEAAMzte` (see verify.js on main). Keep the nonce as raw digits.
 
-Archived at: 2026-09-30T16:42:09Z
+Archived at: 2026-10-01T17:17:26Z
